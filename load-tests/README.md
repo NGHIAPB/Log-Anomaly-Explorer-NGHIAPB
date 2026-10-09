@@ -17,3 +17,6 @@ Mở `http://localhost:8089`, nhập số user đồng thời và spawn rate the
 - Tỷ lệ lỗi / timeout khi tải tăng
 - Với `QueryUser`: độ trễ p95/p99 khi `/clusters` bị gọi đồng thời
 - Lưu kết quả (CSV/screenshot Locust) vào thư mục này hoặc đính kèm vào PR làm bằng chứng
+
+**Ingestion (Minh)**: kết quả đo + cách chạy lại → [`INGESTION_LOAD_TEST.md`](INGESTION_LOAD_TEST.md),
+dữ liệu thô trong `ingestion_load_test_stats*.csv` và `ingestion_load_test_report.html`.
