@@ -4,14 +4,14 @@
 
 ## Trách nhiệm
 
-- [ ] Gắn OpenTelemetry SDK (`src/telemetry.py`) — sinh `trace_id`/`span_id` thật cho mỗi request
-- [ ] Hoàn thiện `emit_log()` trong `src/main.py` để dùng trace context thật thay vì placeholder
-- [ ] Thêm endpoint giả lập cho luồng mobile (hoặc gọi `/api/items` kèm header `X-Client: mobile` — tuỳ chọn, bàn với cả nhóm)
-- [ ] Mở rộng `/simulate-error` nếu cần thêm loại lỗi khác (timeout, log sai schema) để phong phú dữ liệu fault injection
+- [x] Gắn OpenTelemetry SDK (`src/telemetry.py`) — `TracerProvider` thật + exporter (OTLP nếu có `OTEL_EXPORTER_OTLP_ENDPOINT`, fallback console), sinh `trace_id`/`span_id` thật cho mỗi request qua middleware tracing trong `src/main.py`
+- [x] Hoàn thiện `emit_log()` trong `src/main.py` để dùng trace context thật thay vì placeholder
+- [x] Thêm endpoint giả lập cho luồng mobile — gọi `/api/items` kèm header `X-Client: mobile` → log được gán `service=demo-mobile-api` thay vì `demo-web`
+- [x] Mở rộng `/simulate-error` với tham số `fault_type` (`error`, `timeout`, `bad_schema`) để phong phú dữ liệu fault injection
 
 ## Hợp đồng đang tuân theo
 
-Mọi log gửi đi qua `POST {INGESTION_URL}/ingest` phải đúng [`docs/contracts/log-schema.json`](../docs/architect/contracts/log-schema.json).
+Mọi log gửi đi qua `POST {INGESTION_URL}/ingest` phải đúng [`log-schema.json`](../docs/architect/contracts/log-schema.json).
 
 ## Chạy thử
 
@@ -20,9 +20,31 @@ pip install -r requirements.txt
 uvicorn src.main:app --reload --port 8001
 ```
 
-- `GET /api/items` — sinh log INFO bình thường (baseline)
-- `GET /simulate-error?rate=0.3` — tiêm lỗi có xác suất `rate`, dùng để tạo giai đoạn bất thường có kiểm soát
+- `GET /health` — kiểm tra service đang chạy
+- `GET /api/items` — sinh log INFO bình thường (baseline, `service=demo-web`)
+- `GET /api/items` kèm header `X-Client: mobile` — baseline cho luồng mobile (`service=demo-mobile-api`)
+- `GET /simulate-error?rate=0.3&fault_type=error` — tiêm lỗi có xác suất `rate`, dùng để tạo giai đoạn bất thường có kiểm soát
 
-## Evidence sở hữu
+### Trace thật (OpenTelemetry)
 
-**Fault injection** — ghi lại rõ: cách bật/tắt, tham số điều khiển (`rate`), và log/script đã dùng để tạo ra các giai đoạn bất thường dùng cho `clustering/evaluation/labeled_incidents.json`.
+Mỗi request được bọc trong một span (middleware `tracing_middleware` trong `src/main.py`). `trace_id`/`span_id` của span đó được gắn vào mọi structured log gửi về Ingestion qua `emit_log()`. Mặc định (không cấu hình `OTEL_EXPORTER_OTLP_ENDPOINT`) span được in ra console để tiện quan sát khi demo local không có collector; nếu có collector OTLP/HTTP, set biến môi trường này để xuất span thật về đó.
+
+## Evidence sở hữu — Fault injection
+
+**Cách bật/tắt:** fault injection nằm ở endpoint `GET /simulate-error`, mặc định tắt khi không gọi tới (các endpoint baseline như `/api/items` không bao giờ tiêm lỗi).
+
+**Tham số điều khiển:**
+- `rate` (0.0–1.0): xác suất tiêm lỗi mỗi lần gọi. `rate=0` = không lỗi, `rate=1` = luôn lỗi.
+- `fault_type`:
+  - `error` (mặc định) — lỗi 500 ngẫu nhiên ở tầng ứng dụng (`RuntimeError`), log `ERROR` kèm `stack_trace`.
+  - `timeout` — giả lập downstream chậm (delay 3–6s), trả về `504`, log `WARN` trước khi delay.
+  - `bad_schema` — gửi thẳng một log **sai** `log-schema.json` (thiếu `trace_id`/`span_id`, `level` ngoài enum) về Ingestion để kiểm tra cơ chế quarantine, trả về `502`.
+
+**Log/script tạo giai đoạn bất thường:** [`scripts/trigger_fault_window.py`](scripts/trigger_fault_window.py) — gọi lặp `/simulate-error` trong một khoảng thời gian cố định, in ra JSON summary gồm `started_at`/`ended_at` (UTC), `fault_type`, `rate`, số lần gọi, số lần lỗi. Ví dụ:
+
+```bash
+cd demo-app
+python scripts/trigger_fault_window.py --duration 30 --rate 0.6 --fault-type error
+```
+
+Khoảng `[started_at, ended_at]` in ra từ script này là đầu vào để Nam gán nhãn ground-truth trong `clustering/evaluation/labeled_incidents.json` (file đó do Nam sở hữu, script này không tự sửa).
