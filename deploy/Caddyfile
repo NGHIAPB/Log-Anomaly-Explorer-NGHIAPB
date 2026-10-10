@@ -1,0 +1,46 @@
+# Caddyfile - cong vao duy nhat ra Internet cho Log Anomaly Explorer (Nghia).
+#
+# PUBLIC_ADDRESS (xem docker-compose.yml + .env.example):
+#   - Mac dinh ":80" - chi HTTP thuan, dung khi chua co domain that (vd. test
+#     qua IP cua may chu).
+#   - Dat thanh mot domain that (vd. "log-anomaly.example.com") de Caddy TU
+#     DONG xin & gia han chung chi HTTPS (Let's Encrypt) - khong can cau hinh
+#     gi them, chi can DNS cua domain do tro ve IP may chu va mo port 443.
+
+{$PUBLIC_ADDRESS} {
+	# POST /ingest - Ingestion Service (Minh)
+	@ingest path /ingest
+	handle @ingest {
+		reverse_proxy ingestion:8000
+	}
+
+	# GET /search, /clusters, /clusters/{id} - Query & Incident API (Nghia)
+	@query path /search* /clusters*
+	handle @query {
+		reverse_proxy query-api:8002
+	}
+
+	# Swagger UI / OpenAPI tu sinh cua query-api - "UI" de xem & test API qua
+	# trinh duyet, dung chung cong :80 voi phan con lai (xem docs/task/deployment.md).
+	# ingestion (:8000/docs) va demo-app (:8001/docs) van xem truc tiep qua port
+	# rieng - khong gop vao day vi Swagger UI cua tung service tu tham chieu
+	# /openapi.json tuyet doi, gop chung se load nham schema cua service khac.
+	@api-docs path /docs /redoc /openapi.json
+	handle @api-docs {
+		reverse_proxy query-api:8002
+	}
+
+	# /demo/* -> Demo App (Manh), vd. /demo/api/items, /demo/simulate-error
+	handle_path /demo/* {
+		reverse_proxy demo-app:8001
+	}
+
+	# Health check dung chung - tro ve query-api cho gon
+	handle /health {
+		reverse_proxy query-api:8002
+	}
+
+	handle {
+		respond "Log Anomaly Explorer - xem /search, /clusters, /clusters/{id}, /ingest, /demo/*" 200
+	}
+}

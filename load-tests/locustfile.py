@@ -9,7 +9,6 @@ So nguoi dung dong thoi (concurrency) cau hinh khi chay Locust (--users),
 KHONG hardcode trong file nay - moi lan test co the dung muc tai khac nhau
 tuy muc tieu (vd. theo yeu cau cua bien the ca nhan dang lam).
 
-TODO (Nghia): bo sung task goi /search, /clusters, /clusters/{id} cho load test end-to-end.
 """
 
 from __future__ import annotations
@@ -93,11 +92,52 @@ class IngestionUser(HttpUser):
 
 
 class QueryUser(HttpUser):
-    """Mo phong nguoi dung / doi tac goi Query & Incident API."""
+    """Mo phong nguoi dung / doi tac goi Query & Incident API (Nghia) - load
+    test end-to-end: /search, /clusters, /clusters/{id}, bao gom ca duong
+    Incident View (tra log theo log_ids). Danh sach cluster_id duoc cache
+    moi user khi khoi dong de /clusters/{id} khong luon goi mot id co dinh."""
 
     wait_time = between(0.5, 2.0)
     host = "http://localhost:8002"
 
-    @task
+    def on_start(self) -> None:
+        self._cluster_ids: list[str] = []
+
+    @task(3)
     def list_clusters(self):
         self.client.get("/clusters")
+
+    @task(3)
+    def search_logs(self):
+        # `name=` gop thong ke ve mot dong duy nhat trong report Locust, thay vi
+        # mot dong rieng cho moi gia tri service/trace_id ngau nhien.
+        self.client.get(
+            "/search",
+            params={"service": random.choice(_SERVICES)},
+            name="/search?service=[...]",
+        )
+
+    @task(2)
+    def search_by_trace(self):
+        """Mo phong tra cuu trace/request cu the (khong chac trace_id ton tai -
+        van la truy van hop le theo api-contract.md, chi tra ve rong)."""
+        self.client.get(
+            "/search",
+            params={"trace_id": uuid.uuid4().hex},
+            name="/search?trace_id=[...]",
+        )
+
+    @task(2)
+    def get_cluster_detail(self):
+        """Incident View: lay danh sach cluster_id thuc (tu /clusters) roi goi
+        chi tiet - mo phong dung luong 'nhan alert -> mo Incident View'."""
+        with self.client.get("/clusters", catch_response=True) as resp:
+            if resp.status_code != 200:
+                resp.failure(f"expected 200 listing clusters, got {resp.status_code}")
+                return
+            self._cluster_ids = [c["cluster_id"] for c in resp.json().get("clusters", [])]
+
+        if not self._cluster_ids:
+            return
+        cluster_id = random.choice(self._cluster_ids)
+        self.client.get(f"/clusters/{cluster_id}", name="/clusters/[cluster_id]")

@@ -26,7 +26,7 @@ Tìm log thô theo field — **không phải** semantic/vector search.
 | `trace_id` | string | Không |
 | `q` | string (full-text trên `message`) | Không |
 
-Response: danh sách log theo `log-schema.json`, kèm `total`.
+Response: `{ "total": 0, "results": [ /* StructuredLog[] theo log-schema.json */ ] }`
 
 ### `GET /clusters`
 Danh sách cụm bất thường, đọc từ dữ liệu do Nam ghi theo [`cluster-record.schema.json`](./cluster-record.schema.json).
@@ -34,19 +34,29 @@ Danh sách cụm bất thường, đọc từ dữ liệu do Nam ghi theo [`clus
 | Query param | Kiểu | Ghi chú |
 |---|---|---|
 | `status` | `anomalous` \| `alerted` \| `normal` | Lọc theo trạng thái |
-| `since` | ISO 8601 datetime | Mặc định theo retention hiện hành |
+| `since` | ISO 8601 datetime | Mặc định `now - RETENTION_DAYS` (retention hiện hành của ingestion, xem `ingestion/README.md`) |
+
+Response: `{ "total": 0, "clusters": [ /* ClusterRecord[] theo cluster-record.schema.json */ ] }`
 
 ### `GET /clusters/{cluster_id}`
-Chi tiết một cụm — dùng cho Incident View.
+Chi tiết một cụm — dùng cho Incident View. Trả về toàn bộ `ClusterRecord`
+([`cluster-record.schema.json`](./cluster-record.schema.json): `cluster_id`, `signature`,
+`score`, `log_ids`, `trace_ids`, `first_seen`, `last_seen`, `status`) cộng thêm `logs` đã
+tra từ `log_ids` — giữ nguyên các field gốc thay vì cắt bớt, vì `first_seen`/`last_seen`/
+`signature` đều cần cho runbook (xem `docs/task/runbook.md`).
 
 Response:
 ```json
 {
   "cluster_id": "...",
+  "signature": "...",
   "score": 0.0,
+  "log_ids": ["..."],
+  "trace_ids": ["..."],
+  "first_seen": "...",
+  "last_seen": "...",
   "status": "anomalous",
-  "logs": [ /* StructuredLog[] theo log-schema.json, tra ve tu log_ids */ ],
-  "trace_ids": ["..."]
+  "logs": [ /* StructuredLog[] theo log-schema.json, tra ve tu log_ids */ ]
 }
 ```
 

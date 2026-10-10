@@ -1,0 +1,131 @@
+# Stack deploy day du cho Log Anomaly Explorer - phan "deploy len Web" do
+# Nghia phu trach (xem docs/task/deployment.md).
+#
+# Gop toan bo pipeline that: OpenSearch (database) + 4 service Python
+# (ingestion, demo-app, clustering worker, query-api) + 1 reverse-proxy
+# (Caddy) lam cong vao duy nhat ra Internet.
+#
+# Chay (tu thu muc goc repo, can Docker + Docker Compose plugin):
+#   docker compose up -d --build
+#
+# Khac voi ingestion/docker-compose.yml (chi OpenSearch, dung cho Minh dev
+# ingestion rieng le) - file nay la stack DEPLOY day du, dung cho demo/evidence
+# va cho viec dua len mot may chu that (VPS/cloud VM).
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: log-anomaly-opensearch
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # KHONG publish port 9200 ra host: day la database noi bo, chi
+    # ingestion/clustering/query-api (cung mang docker) duoc truy cap,
+    # khong bao gio lo truc tiep ra Internet qua gateway.
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: log-anomaly-ingestion
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      RETENTION_INTERVAL_HOURS: ${RETENTION_INTERVAL_HOURS:-24}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  demo-app:
+    build:
+      context: .
+      dockerfile: demo-app/Dockerfile
+    container_name: log-anomaly-demo-app
+    depends_on:
+      ingestion:
+        condition: service_healthy
+    environment:
+      INGESTION_URL: http://ingestion:8000/ingest
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  clustering:
+    build:
+      context: .
+      dockerfile: clustering/Dockerfile
+    container_name: log-anomaly-clustering
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      ingestion:
+        condition: service_healthy
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+      CLUSTERING_WINDOW_MINUTES: ${CLUSTERING_WINDOW_MINUTES:-10}
+      CLUSTERING_BASELINE_WINDOWS: ${CLUSTERING_BASELINE_WINDOWS:-6}
+      CLUSTERING_INTERVAL_SECONDS: ${CLUSTERING_INTERVAL_SECONDS:-60}
+      ANOMALY_THRESHOLD: ${ANOMALY_THRESHOLD:-2.0}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    restart: unless-stopped
+    # Job nen (khong phai HTTP service) - khong co port/healthcheck.
+
+  query-api:
+    build:
+      context: .
+      dockerfile: query-api/Dockerfile
+    container_name: log-anomaly-query-api
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8002/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    image: caddy:2.8-alpine
+    container_name: log-anomaly-gateway
+    depends_on:
+      - ingestion
+      - query-api
+      - demo-app
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      PUBLIC_ADDRESS: ${PUBLIC_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
+volumes:
+  opensearch-data:
+  caddy-data:
