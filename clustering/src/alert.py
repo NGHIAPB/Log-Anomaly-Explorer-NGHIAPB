@@ -1,8 +1,13 @@
 """
 Alert dispatcher.
 
-TODO (Nam): cau hinh ANOMALY_THRESHOLD va ALERT_WEBHOOK_URL that,
-va goi check_and_alert() sau moi lan compute_anomaly_score().
+Cau hinh qua bien moi truong (xem clustering/README.md):
+- ANOMALY_THRESHOLD: nguong z-score (xem anomaly_score.py) de phat alert.
+  Mac dinh 2.0 (~2 do lech chuan so voi tan suat lich su binh thuong).
+- ALERT_WEBHOOK_URL: endpoint nhan webhook khi vuot nguong. Khi rong,
+  check_and_alert() van cap nhat status = "alerted" nhung khong gui di dau
+  (de lai log ro rang thay vi fail am tham) - xem src/main.py cho noi
+  check_and_alert() duoc goi sau moi lan compute_anomaly_score().
 """
 
 from __future__ import annotations

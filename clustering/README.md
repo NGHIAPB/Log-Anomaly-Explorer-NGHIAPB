@@ -4,18 +4,108 @@
 
 ## Trách nhiệm
 
-- [ ] Hoàn thiện thuật toán nhóm lỗi trong `src/clustering.py` (hiện chỉ group theo message nguyên văn — cần chuẩn hoá/so khớp thực sự)
-- [ ] Hoàn thiện cách tính baseline tần suất + anomaly score trong `src/anomaly_score.py`
-- [ ] Cấu hình `ANOMALY_THRESHOLD` và `ALERT_WEBHOOK_URL` cho `src/alert.py`
-- [ ] Phối hợp với Mạnh: dùng `/simulate-error` để tạo các giai đoạn bất thường có kiểm soát, rồi điền vào `evaluation/labeled_incidents.json`
-- [ ] Chạy `evaluation/precision_recall.py` để có số liệu precision/recall thật, không chỉ chạy trên dữ liệu rỗng
+- [x] Hoàn thiện thuật toán nhóm lỗi trong `src/clustering.py` — chuẩn hoá message (bỏ số, uuid, hex id, chuỗi trong quote) trước khi nhóm, ưu tiên dòng cuối `stack_trace` khi có (`compute_signature`), để các lỗi cùng "hình dạng" nhưng khác giá trị cụ thể được nhóm chung
+- [x] Hoàn thiện cách tính baseline tần suất + anomaly score — `src/baseline.py` tính baseline (mean/stdev) thật từ lịch sử log lỗi cùng signature theo các khung thời gian (bucket) trước đó; `src/anomaly_score.py` dùng z-score so với baseline đó
+- [x] Cấu hình `ANOMALY_THRESHOLD` và `ALERT_WEBHOOK_URL` cho `src/alert.py` qua biến môi trường (xem bảng dưới); `check_and_alert()` được job nền (`src/main.py`) gọi sau mỗi lần `compute_anomaly_score()`
+- [x] Phối hợp với Mạnh: dùng `/simulate-error` để tạo các giai đoạn bất thường có kiểm soát, rồi điền vào `evaluation/labeled_incidents.json`
+- [x] Chạy `evaluation/precision_recall.py` để có số liệu precision/recall thật (xem mục "Chạy thử end-to-end" bên dưới)
+
+## Thêm so với checklist gốc
+
+Checklist gốc không yêu cầu rõ nơi lưu `ClusterRecord` để Nghĩa đọc — để `GET /clusters`,
+`GET /clusters/{id}` của Nghĩa có dữ liệu thật để nối vào (thay vì mock tĩnh), đã bổ sung:
+
+- `src/storage.py` — `ClusterStore` (giống mô hình `LogStore` của Minh): `OpenSearchClusterStore`
+  (mặc định, ghi index `clusters` trên cùng OpenSearch của Ingestion) + `InMemoryClusterStore`
+  (dev/test nhẹ, `CLUSTER_STORE_BACKEND=memory`). Tự validate theo `cluster-record.schema.json`
+  trước khi ghi, và tự gộp (merge) khi cùng `cluster_id` xuất hiện lại ở khung thời gian sau
+  (giữ `first_seen` sớm nhất / `last_seen` muộn nhất / hợp `log_ids`, `trace_ids`) để một incident
+  đang tiếp diễn không bị tách thành nhiều cluster rời rạc.
+- `src/main.py` — job nền thực sự: đọc log ERROR/FATAL mới từ `LogStore` của Minh, nhóm, tính
+  baseline + score, gọi alert, ghi vào `ClusterStore`. Chạy lặp (`run_forever()`, mặc định mỗi 60s)
+  hoặc 1 lần (`scripts/run_clustering.py`, dùng cho OS cron/k8s CronJob).
+
+**Quan trọng cho Nghĩa**: đừng tự khởi tạo `ClusterStore` riêng — import `get_cluster_store()`
+từ `clustering.src.storage`, giống cách Ingestion đã yêu cầu dùng `get_store()`:
+
+```python
+from clustering.src.storage import get_cluster_store
+
+cstore = get_cluster_store()
+clusters = cstore.list_clusters(status="alerted")   # GET /clusters
+cluster = cstore.get_cluster(cluster_id)              # GET /clusters/{id}
+```
 
 ## Hợp đồng đang tuân theo
 
-- Input: đọc log đã lưu từ Ingestion (Minh)
-- Output: ghi `ClusterRecord` theo [`cluster-record.schema.json`](../docs/architect/contracts/cluster-record.schema.json), Nghĩa đọc để phục vụ Incident View
+- Input: đọc log đã lưu từ Ingestion (Minh) qua `ingestion.src.storage.get_store()` (log ERROR/FATAL)
+- Output: ghi `ClusterRecord` theo [`cluster-record.schema.json`](../docs/architect/contracts/cluster-record.schema.json)
+  vào `ClusterStore` (`src/storage.py`), Nghĩa đọc qua `get_cluster_store()` để phục vụ Incident View
+- Alert webhook: payload tối thiểu theo [`api-contract.md`](../docs/architect/contracts/api-contract.md)
+  (`cluster_id`, `score`, `service`, `first_seen`) — gửi trực tiếp, không qua query-api
+
+## Chạy thử
+
+```bash
+# 1. OpenSearch cuc bo (dung chung voi Ingestion) - xem ingestion/docker-compose.yml
+docker compose -f ../ingestion/docker-compose.yml up -d
+
+# 2. Ingestion phai dang chay (de co log dau vao)
+cd ../ingestion && uvicorn src.main:app --reload --port 8000
+
+# 3. Chay job clustering 1 lan (tu thu muc goc repo, de import package hoat dong)
+cd ..
+pip install -r clustering/requirements.txt
+CLUSTERING_INTERVAL_SECONDS=0 python -m clustering.src.main
+
+# hoac chay lap vo han (moi 60s, mac dinh):
+python -m clustering.src.main
+```
+
+Không có Docker/OpenSearch? Dùng backend nhẹ không persist (không dùng cho evidence/demo thật):
+
+```bash
+CLUSTER_STORE_BACKEND=memory LOG_STORE_BACKEND=memory CLUSTERING_INTERVAL_SECONDS=0 python -m clustering.src.main
+```
+
+### Biến môi trường
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `CLUSTERING_WINDOW_MINUTES` | `10` | Độ dài khung thời gian hiện tại đang xét để nhóm lỗi + tính score |
+| `CLUSTERING_BASELINE_WINDOWS` | `6` | Số khung lịch sử liền trước dùng để tính baseline (mean/stdev) |
+| `CLUSTERING_INTERVAL_SECONDS` | `60` | Khoảng nghỉ giữa 2 lần chạy của `run_forever()`; `0` = chạy 1 lần rồi thoát |
+| `CLUSTERING_FETCH_SIZE` | `5000` | Số log tối đa đọc một lần từ `LogStore` mỗi vòng chạy |
+| `ANOMALY_THRESHOLD` | `2.0` | Ngưỡng z-score để chuyển `status` sang `alerted` |
+| `ALERT_WEBHOOK_URL` | *(rỗng)* | Webhook nhận alert khi vượt ngưỡng; rỗng = không gửi (vẫn cập nhật status) |
+| `CLUSTER_STORE_BACKEND` | `opensearch` | `opensearch` (thật) hoặc `memory` (dev/test nhẹ) |
+| `OPENSEARCH_CLUSTER_INDEX` | `clusters` | Index lưu `ClusterRecord` (dùng chung `OPENSEARCH_URL` với Ingestion) |
+
+## Chạy thử end-to-end (tạo số liệu precision/recall thật)
+
+```bash
+# Giả sử demo-app (8001), ingestion (8000) đã chạy như trên.
+# 1. Tạo một giai đoạn bất thường có kiểm soát bằng fault injection của Mạnh:
+cd ../demo-app
+python scripts/trigger_fault_window.py --duration 30 --rate 0.6 --fault-type error
+# In ra JSON voi "started_at"/"ended_at" - dung lam window_from/window_to
+
+# 2. Chạy job clustering 1 lần để nhóm + tính score + alert + ghi ClusterRecord:
+cd ..
+CLUSTERING_INTERVAL_SECONDS=0 CLUSTERING_WINDOW_MINUTES=5 python -m clustering.src.main
+
+# 3. Dien evaluation/labeled_incidents.json: lay window_from/window_to tu buoc 1,
+#    va expected_cluster_signature tu ClusterRecord vua ghi (truy van qua get_cluster_store()
+#    hoac in log/debug trong buoc 2).
+
+# 4. Chay precision/recall tren du lieu that:
+python -m clustering.evaluation.precision_recall
+```
 
 ## Evidence sở hữu
 
-- **Labeled incidents**: `evaluation/labeled_incidents.json` — mỗi sự cố thật được gán nhãn thủ công, thường tạo ra từ fault injection của Mạnh
-- **Precision/recall**: `evaluation/precision_recall.py` — đo trên labeled incidents ở trên
+- **Labeled incidents**: `evaluation/labeled_incidents.json` — mỗi sự cố thật được gán nhãn thủ công,
+  tạo ra từ fault injection của Mạnh (xem mục "Chạy thử end-to-end" trên)
+- **Precision/recall**: `evaluation/precision_recall.py` — đo trên labeled incidents ở trên; so khớp
+  theo `signature` + `service` **và** khung thời gian (`first_seen`/`last_seen` chồng lấn
+  `window_from`/`window_to`), không chỉ so khớp signature/service đơn thuần
