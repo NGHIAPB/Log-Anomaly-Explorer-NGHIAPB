@@ -20,3 +20,8 @@ Mở `http://localhost:8089`, nhập số user đồng thời và spawn rate the
 
 **Ingestion (Minh)**: kết quả đo + cách chạy lại → [`INGESTION_LOAD_TEST.md`](INGESTION_LOAD_TEST.md),
 dữ liệu thô trong `ingestion_load_test_stats*.csv` và `ingestion_load_test_report.html`.
+
+**End-to-end (Nghĩa)**: kết quả đo + cách chạy lại → [`END_TO_END_LOAD_TEST.md`](END_TO_END_LOAD_TEST.md)
+— chạy toàn bộ pipeline thật (ingest → cluster → alert → query), dữ liệu thô trong
+`e2e_load_test_stats*.csv`/`e2e_load_test_report.html` (chỉ `QueryUser`) và
+`e2e_full_pipeline_stats*.csv`/`e2e_full_pipeline_report.html` (`IngestionUser` + `QueryUser` đồng thời).

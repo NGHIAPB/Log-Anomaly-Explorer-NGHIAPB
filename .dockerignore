@@ -1,0 +1,9 @@
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+*.log
+load-tests/*.csv
+load-tests/*.html
+docs/architect/architecture-sod.png

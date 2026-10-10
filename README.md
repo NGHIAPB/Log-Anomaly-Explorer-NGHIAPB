@@ -26,6 +26,7 @@ OpenTelemetry (instrumentation) · Python (toàn bộ service) · Elasticsearch/
 | [`ingestion/`](ingestion/) | Minh | Ingestion | Load test (ingestion) |
 | [`clustering/`](clustering/) | Nam | Clustering/anomaly score, Alert | Labeled incidents, Precision/recall |
 | [`query-api/`](query-api/) | Nghĩa (nhóm trưởng) | Search, Incident view | Runbook, Load test (end-to-end) |
+| [`web/`](web/) | Nghĩa (nhóm trưởng) | Search, Incident view (UI) | Deploy (Web) |
 | [`load-tests/`](load-tests/) | Minh + Nghĩa (dùng chung) | — | Load test |
 | [`docs/`](docs/) | Cả nhóm | — | — |
 
@@ -51,6 +52,22 @@ uvicorn src.main:app --reload --port 8000
 
 Xem `README.md` trong mỗi thư mục để biết cổng (port) và cách chạy cụ thể.
 
+## Deploy (Web) — toàn bộ stack bằng Docker
+
+Môi trường deploy của đề bài là Web — backend + database được đóng gói thành một stack
+Docker chạy bằng một lệnh duy nhất (từ gốc repo):
+
+```bash
+docker compose up -d --build
+```
+
+Dựng OpenSearch (database) + cả 4 service (ingestion, demo-app, clustering, query-api) +
+một reverse-proxy (Caddy) làm cổng vào duy nhất trên port `80`. Chi tiết kiến trúc, cách
+deploy lên VPS/cloud thật, gắn domain + HTTPS tự động: [`docs/task/deployment.md`](docs/task/deployment.md) (Nghĩa).
+
+**Giao diện người dùng** (không phải Swagger UI tự sinh): [`web/`](web/) — Next.js, deploy lên
+Vercel, gọi trực tiếp `query-api`. Xem [`web/README.md`](web/README.md) để chạy thử/deploy.
+
 ## GitHub evidence bắt buộc
 
 | Evidence | Vị trí | Phụ trách |
@@ -60,6 +77,7 @@ Xem `README.md` trong mỗi thư mục để biết cổng (port) và cách ch�
 | Precision/recall | `clustering/evaluation/precision_recall.py` | Nam |
 | Load test | `load-tests/` | Minh (ingestion), Nghĩa (end-to-end) |
 | Runbook | `docs/task/runbook.md` | Nghĩa |
+| Deploy (Web) | `docker-compose.yml`, `docs/task/deployment.md` | Nghĩa |
 
 ## Quy ước làm việc
 

@@ -8,6 +8,10 @@ venv/
 # Env / secrets
 .env
 .env.*
+!.env.example
+
+# Local dev tools (vd. cloudflared tai ve de tao tunnel public tam thoi)
+.tools/
 
 # OS / editor
 .DS_Store
