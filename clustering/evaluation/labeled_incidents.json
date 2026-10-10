@@ -1,13 +1,13 @@
 {
-  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT (thuong tao ra bang demo-app /simulate-error) da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py.",
+  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT (tao ra bang demo-app /simulate-error qua scripts/trigger_fault_window.py) da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py.",
   "incidents": [
     {
-      "incident_id": "example-001",
-      "window_from": "2026-10-01T09:00:00Z",
-      "window_to": "2026-10-01T09:10:00Z",
+      "incident_id": "burst-2026-10-10-01",
+      "window_from": "2026-10-10T02:15:50.375012Z",
+      "window_to": "2026-10-10T02:17:57.529391Z",
       "service": "demo-web",
-      "description": "TODO: vi du - tiem loi qua /simulate-error?rate=0.8 trong 10 phut de tao mot incident that",
-      "expected_cluster_signature": "TODO: dien signature cum loi tuong ung sau khi chay clustering"
+      "description": "Tao bang: demo-app + ingestion + OpenSearch that (docker compose), goi lap lai /simulate-error?rate=0.8&fault_type=error nhieu lan. Chay `python -m clustering.src.main` (CLUSTER_STORE_BACKEND=opensearch, mac dinh) ghi 1 ClusterRecord thuc vao index `clusters`: 13 log ERROR cung signature, score=13.0 (chua co lich su baseline truoc do nen rơi vao nhanh fallback score=count trong anomaly_score.compute_anomaly_score), vuot ANOMALY_THRESHOLD=2.0 -> status=alerted. Xac nhan qua: curl http://localhost:9200/clusters/_search?pretty.",
+      "expected_cluster_signature": "runtimeerror: simulated downstream failure"
     }
   ]
 }
