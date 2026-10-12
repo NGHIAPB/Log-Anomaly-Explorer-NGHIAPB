@@ -10,6 +10,29 @@
 - [x] Phối hợp với Mạnh: dùng `/simulate-error` để tạo các giai đoạn bất thường có kiểm soát, rồi điền vào `evaluation/labeled_incidents.json`
 - [x] Chạy `evaluation/precision_recall.py` để có số liệu precision/recall thật (xem mục "Chạy thử end-to-end" bên dưới)
 
+## ⚠️ Bug thật đã sửa (2026-10-12, Nghĩa — báo Nam biết trước khi merge)
+
+**Triệu chứng phát hiện khi chạy thật trên VPS**: `demo-web` và `demo-mobile-api` cùng gây ra
+lỗi có **signature giống hệt nhau** (cùng gọi chung 1 hàm lỗi trong `demo-app`). `group_similar_errors()`
+cũ chỉ nhóm theo `signature`, không theo `service` — khiến log của 2 service bị gộp chung vào
+1 nhóm. `anomaly_score.compute_anomaly_score()` lấy `service` từ `logs[0]` (log đầu tiên trong
+nhóm) để tính `cluster_id` — tức **service đại diện cho cả cụm phụ thuộc ngẫu nhiên vào log nào
+đứng đầu danh sách ở mỗi lần chạy**, không ổn định. Hậu quả quan sát được thật: một cụm
+`demo-mobile-api` được tạo đúng 1 lần rồi "đứng yên mãi" — các log lỗi mobile mới sau đó (đã xác
+nhận có tồn tại thật qua `GET /search?service=demo-mobile-api`) bị gộp nhầm vào cụm `demo-web`
+thay vì cập nhật đúng cụm của nó.
+
+**Đã sửa**: `group_similar_errors()` (`src/clustering.py`) giờ nhóm theo cặp `(service, signature)`
+thay vì chỉ `signature`; `historical_bucket_counts()` (`src/baseline.py`) nhận thêm tham số
+`service`, lọc lịch sử theo đúng cặp đó để baseline của từng service tách biệt, không tính gộp.
+`src/main.py` cập nhật theo. `compute_anomaly_score()` (`anomaly_score.py`) không cần đổi vì đã
+tự lấy `service` từ `logs[0]` — giờ đáng tin cậy vì mỗi nhóm chỉ còn đúng 1 service.
+
+**Đã kiểm chứng thật**: bắn 15 lỗi `demo-web` + 10 lỗi `demo-mobile-api` trong cùng cửa sổ thời
+gian → đúng 2 `ClusterRecord` riêng biệt, score lần lượt `15.0` và `10.0` (khớp chính xác số
+lượng đã gửi), cùng `cluster_id` ổn định như trước khi sửa (công thức hash không đổi, chỉ sửa
+cách gom nhóm đầu vào).
+
 ## Thêm so với checklist gốc
 
 Checklist gốc không yêu cầu rõ nơi lưu `ClusterRecord` để Nghĩa đọc — để `GET /clusters`,

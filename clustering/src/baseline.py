@@ -29,20 +29,25 @@ def bucket_key(ts: str, bucket_minutes: float) -> int:
 
 def historical_bucket_counts(
     history_logs: list[dict],
+    service: str,
     signature: str,
     bucket_minutes: float,
     num_buckets: int,
     current_bucket: int,
 ) -> list[int]:
-    """Dem so log co `signature` da cho trong moi bucket lich su (khong tinh
-    bucket hien tai), tra ve danh sach do dai <= num_buckets, mot phan tu
-    cho moi bucket lui ve truoc (bucket rong => 0, khong bi bo qua) de
-    trung binh/do lech chuan phan anh dung muc do "im hoi lang tieng" giua
-    cac lan xuat hien.
+    """Dem so log co cung (service, signature) da cho trong moi bucket lich
+    su (khong tinh bucket hien tai), tra ve danh sach do dai <= num_buckets,
+    mot phan tu cho moi bucket lui ve truoc (bucket rong => 0, khong bi bo
+    qua) de trung binh/do lech chuan phan anh dung muc do "im hoi lang
+    tieng" giua cac lan xuat hien.
+
+    Loc theo ca service (khong chi signature) de khop voi
+    clustering.group_similar_errors() - 2 service cung signature phai co
+    baseline rieng, khong tinh gop chung (xem docstring group_similar_errors).
     """
     counts: dict[int, int] = {}
     for log in history_logs:
-        if compute_signature(log) != signature:
+        if log.get("service", "") != service or compute_signature(log) != signature:
             continue
         bucket = bucket_key(log["timestamp"], bucket_minutes)
         if bucket >= current_bucket:

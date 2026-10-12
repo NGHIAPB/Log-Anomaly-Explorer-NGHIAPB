@@ -51,15 +51,27 @@ def compute_signature(log: dict) -> str:
     return normalize_message(log.get("message", ""))
 
 
-def group_similar_errors(logs: Iterable[dict]) -> dict[str, list[dict]]:
-    """Nhom danh sach log (chi nhung log level ERROR/FATAL) theo signature.
+def group_similar_errors(logs: Iterable[dict]) -> dict[tuple[str, str], list[dict]]:
+    """Nhom danh sach log (chi nhung log level ERROR/FATAL) theo CAP
+    (service, signature) - khong chi signature don thuan.
 
-    Tra ve: { signature: [log, log, ...] }
+    Vi sao can ca service: 2 service khac nhau co the sinh ra loi CUNG
+    signature (vd. demo-web va demo-mobile-api cung goi chung 1 ham loi
+    "Simulated downstream failure" trong demo-app). Neu chi nhom theo
+    signature, ca 2 service bi gop chung vao 1 nhom, va
+    anomaly_score.compute_anomaly_score() (lay service tu logs[0]) se gan
+    ClusterRecord cho MOT service duy nhat mot cach khong on dinh (phu
+    thuoc thu tu log nao dung dau danh sach o moi lan chay) - cac log con
+    lai cua service kia bi "nuot" vao nham cum, con service kia khong bao
+    gio duoc cap nhat du van co loi moi that su xay ra.
+
+    Tra ve: { (service, signature): [log, log, ...] }
     Day la dau vao cho anomaly_score.compute_anomaly_score().
     """
-    groups: dict[str, list[dict]] = defaultdict(list)
+    groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for log in logs:
         if log.get("level") not in ("ERROR", "FATAL"):
             continue
-        groups[compute_signature(log)].append(log)
+        key = (log.get("service", ""), compute_signature(log))
+        groups[key].append(log)
     return dict(groups)
