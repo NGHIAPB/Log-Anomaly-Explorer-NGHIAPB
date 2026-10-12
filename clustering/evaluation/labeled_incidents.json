@@ -1,5 +1,5 @@
 {
-  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT (tao ra bang demo-app /simulate-error qua scripts/trigger_fault_window.py) da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py. 2 incident duoi day duoc tao lai sach tu dau (docker compose down -v) trong cung 1 phien, 2 burst fault injection rieng biet cach nhau ~2 phut, de kiem tra ca 2 window deu duoc he thong nhan dien dung (khong chi 1 lan duy nhat).",
+  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py. 2 incident dau (burst-2026-10-12-01/02) tao tu dau (docker compose down -v + demo-app /simulate-error qua scripts/trigger_fault_window.py), chi co service demo-web va signature 'runtimeerror'. 4 incident sau (burst-2026-10-12-03..06) BO SUNG (khong wipe du lieu dang live tren Azure VM) de co coverage cho service demo-mobile-api va 2 signature moi (not_found, db_error, xem demo-app/src/main.py) - tao bang `docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert` (deploy/synthetic_traffic.py), xac nhan qua curl http://localhost:8002/clusters/{cluster_id} ngay sau moi burst. Window_from/window_to tinh tu dong log 'tick=alert ... burst <duration>s' (thoi diem ket thuc tru di duration).",
   "incidents": [
     {
       "incident_id": "burst-2026-10-12-01",
@@ -16,6 +16,38 @@
       "service": "demo-web",
       "description": "Tiep ngay sau burst-2026-10-12-01 (cung phien, khong down -v giua 2 lan) - goi lai `trigger_fault_window.py --duration 15 --rate 0.9 --interval 0.05 --fault-type error` lan 2 (192 lan goi, 174 lan gay loi). Vi cung signature, clustering gop (merge) vao DUNG 1 ClusterRecord da co (cluster_id khong doi, deterministic theo signature - xem clustering/src/storage.py::_merge_cluster): first_seen giu nguyen tu burst 01, last_seen cap nhat sang cuoi burst 02, score tang len 341.0. Day la truong hop that: 2 giai doan bat thuong rieng biet cung mot loai loi goc, he thong phai nhan dien dung CA HAI khung thoi gian deu thuoc ve cum da alert, khong chi lan dau. Xac nhan qua: curl http://localhost:8002/clusters (first_seen/last_seen bao trum ca 2 window).",
       "expected_cluster_signature": "runtimeerror: simulated downstream failure"
+    },
+    {
+      "incident_id": "burst-2026-10-12-03",
+      "window_from": "2026-10-12T15:15:29.045892Z",
+      "window_to": "2026-10-12T15:15:47.445892Z",
+      "service": "demo-web",
+      "description": "Tao tren Azure VM dang live (khong wipe du lieu): `docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert` ngau nhien ra fault_type=db_error, rate=0.86, burst 18.4s (59 request, ca demo-web va demo-mobile-api vi header X-Client ngau nhien tung request - xem deploy/synthetic_traffic.py::_do_burst). Xac nhan qua curl http://localhost:8002/clusters/b3021278d2d79d1cd4d698330604d533 (status=alerted, logs[0].service=demo-web).",
+      "expected_cluster_signature": "connectionerror: database connection pool exhausted"
+    },
+    {
+      "incident_id": "burst-2026-10-12-04",
+      "window_from": "2026-10-12T15:15:29.045892Z",
+      "window_to": "2026-10-12T15:15:47.445892Z",
+      "service": "demo-mobile-api",
+      "description": "Cung burst voi burst-2026-10-12-03 (mot phan request trong burst co header X-Client: mobile -> service=demo-mobile-api, mot cluster_id rieng theo (service, signature) - xem clustering/src/anomaly_score.py::_stable_cluster_id). Xac nhan qua curl http://localhost:8002/clusters/19ad6719bf731e8d800f08700f117852 (status=alerted, logs[0].service=demo-mobile-api).",
+      "expected_cluster_signature": "connectionerror: database connection pool exhausted"
+    },
+    {
+      "incident_id": "burst-2026-10-12-05",
+      "window_from": "2026-10-12T15:19:43.754175Z",
+      "window_to": "2026-10-12T15:19:54.354175Z",
+      "service": "demo-web",
+      "description": "Tao tren Azure VM dang live: `docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert` ngau nhien ra fault_type=not_found, rate=0.76, burst 10.6s (34 request). normalize_message() chuan hoa dung user_id ngau nhien thanh '<num>' (xem clustering/src/clustering.py), nen moi lan goi deu rot vao CUNG 1 signature du user_id khac nhau. Xac nhan qua curl http://localhost:8002/clusters/0c2bd28fa1b5503c08e262db5b50e331 (status=alerted, logs[0].service=demo-web).",
+      "expected_cluster_signature": "valueerror: user <num> not found"
+    },
+    {
+      "incident_id": "burst-2026-10-12-06",
+      "window_from": "2026-10-12T15:19:43.754175Z",
+      "window_to": "2026-10-12T15:19:54.354175Z",
+      "service": "demo-mobile-api",
+      "description": "Cung burst voi burst-2026-10-12-05, phan request co header X-Client: mobile. Xac nhan qua curl http://localhost:8002/clusters/c433147d45287ef282584a1c084d794e (status=alerted, logs[0].service=demo-mobile-api).",
+      "expected_cluster_signature": "valueerror: user <num> not found"
     }
   ]
 }
