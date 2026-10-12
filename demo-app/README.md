@@ -7,7 +7,7 @@
 - [x] Gắn OpenTelemetry SDK (`src/telemetry.py`) — `TracerProvider` thật + exporter (OTLP nếu có `OTEL_EXPORTER_OTLP_ENDPOINT`, fallback console), sinh `trace_id`/`span_id` thật cho mỗi request qua middleware tracing trong `src/main.py`
 - [x] Hoàn thiện `emit_log()` trong `src/main.py` để dùng trace context thật thay vì placeholder
 - [x] Thêm endpoint giả lập cho luồng mobile — gọi `/api/items` kèm header `X-Client: mobile` → log được gán `service=demo-mobile-api` thay vì `demo-web`
-- [x] Mở rộng `/simulate-error` với tham số `fault_type` (`error`, `timeout`, `bad_schema`) để phong phú dữ liệu fault injection
+- [x] Mở rộng `/simulate-error` với tham số `fault_type` (`error`, `timeout`, `bad_schema`, `not_found`, `db_error`) để phong phú dữ liệu fault injection
 
 ## Hợp đồng đang tuân theo
 
@@ -50,6 +50,8 @@ Mỗi request được bọc trong một span (middleware `tracing_middleware` t
   - `error` (mặc định) — lỗi 500 ngẫu nhiên ở tầng ứng dụng (`RuntimeError`), log `ERROR` kèm `stack_trace`.
   - `timeout` — giả lập downstream chậm (delay 3–6s), trả về `504`, log `WARN` trước khi delay.
   - `bad_schema` — gửi thẳng một log **sai** `log-schema.json` (thiếu `trace_id`/`span_id`, `level` ngoài enum) về Ingestion để kiểm tra cơ chế quarantine, trả về `502`.
+  - `not_found` — lỗi nghiệp vụ (`ValueError: User <id> not found`, id ngẫu nhiên mỗi lần), log `ERROR` kèm `stack_trace`, trả về `404`. Signature khác hẳn `error` — đồng thời minh hoạ `clustering.normalize_message()` (Nam) chuẩn hoá đúng các lỗi cùng "hình dạng" nhưng khác giá trị số.
+  - `db_error` — lỗi tầng hạ tầng (`ConnectionError: Database connection pool exhausted`), log `ERROR` kèm `stack_trace`, trả về `503`. Signature khác cả `error` lẫn `not_found` — tạo thêm cụm lỗi thật thứ 3 trong hệ thống, không chỉ 1 loại lỗi lặp lại ở nhiều service.
 
 **Log/script tạo giai đoạn bất thường:** [`scripts/trigger_fault_window.py`](scripts/trigger_fault_window.py) — gọi lặp `/simulate-error` trong một khoảng thời gian cố định, in ra JSON summary gồm `started_at`/`ended_at` (UTC), `fault_type`, `rate`, số lần gọi, số lần lỗi. Ví dụ:
 

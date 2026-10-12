@@ -125,11 +125,21 @@ def simulate_error(request: Request, rate: float = 0.3, fault_type: str = "error
         giai doan nay la mot incident that trong qua trinh danh gia precision/recall)
 
     `fault_type`:
-      - "error" (mac dinh): loi 500 ngau nhien o tang ung dung.
+      - "error" (mac dinh): loi 500 ngau nhien o tang ung dung
+        (RuntimeError: Simulated downstream failure).
       - "timeout": gia lap downstream cham, tra ve 504 sau khi delay.
       - "bad_schema": gui thang mot log SAI log-schema.json ve Ingestion
         (thieu truong bat buoc, sai enum `level`) de kiem tra co che
         quarantine cua Ingestion.
+      - "not_found": loi nghiep vu 404 (ValueError: User <id> not found),
+        id ngau nhien moi lan - signature khac han "error", dong thoi
+        chung minh clustering.normalize_message() chuan hoa dung cac loi
+        cung "hinh dang" nhung khac gia tri so (xem clustering/src/clustering.py).
+      - "db_error": loi ha tang 503 (ConnectionError: Database connection
+        pool exhausted) - mo phong loi tang ket noi CSDL, khac han ca
+        "error" (tang ung dung) lan "not_found" (tang nghiep vu) ve stack
+        trace/signature, de co nhieu hon 1 loai cum that trong he thong
+        thay vi chi 1 loai lap lai o nhieu service.
     """
     service = _resolve_service_name(request)
 
@@ -151,10 +161,38 @@ def simulate_error(request: Request, rate: float = 0.3, fault_type: str = "error
         _emit_malformed_log(service)
         raise HTTPException(status_code=502, detail="Simulated malformed log emitted to ingestion")
 
+    if fault_type == "not_found":
+        user_id = random.randint(1000, 9999)
+        try:
+            raise ValueError(f"User {user_id} not found")
+        except ValueError:
+            emit_log(
+                "ERROR",
+                f"User {user_id} not found",
+                stack_trace=traceback.format_exc(),
+                service=service,
+            )
+            raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+    if fault_type == "db_error":
+        try:
+            raise ConnectionError("Database connection pool exhausted")
+        except ConnectionError:
+            emit_log(
+                "ERROR",
+                "Database connection pool exhausted",
+                stack_trace=traceback.format_exc(),
+                service=service,
+            )
+            raise HTTPException(status_code=503, detail="Database connection pool exhausted")
+
     if fault_type != "error":
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown fault_type '{fault_type}'. Dung: error | timeout | bad_schema",
+            detail=(
+                f"Unknown fault_type '{fault_type}'. "
+                "Dung: error | timeout | bad_schema | not_found | db_error"
+            ),
         )
 
     try:
