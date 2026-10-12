@@ -1,8 +1,16 @@
 """
 Retention job - xoa log qua han.
 
-TODO (Minh): chay job nay dinh ky (cron / scheduler). So ngay luu
-lay tu bien moi truong RETENTION_DAYS de khong hardcode theo tung bien the ca nhan.
+File nay chi chua LOGIC xoa (run_retention). Lich chay dinh ky da duoc wire
+san o 2 noi (xem ingestion/README.md muc "Retention"):
+  - Mac dinh: APScheduler trong lifespan() cua ingestion/src/main.py, chay
+    moi RETENTION_INTERVAL_HOURS gio (mac dinh 24h).
+  - Thay the: scripts/run_retention.py, dung cho OS cron / k8s CronJob neu
+    muon tach rieng khoi tien trinh FastAPI (dat RETENTION_INTERVAL_HOURS=0
+    de tat scheduler trong tien trinh).
+
+So ngay luu lay tu bien moi truong RETENTION_DAYS de khong hardcode theo
+tung bien the ca nhan.
 """
 
 from __future__ import annotations
