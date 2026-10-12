@@ -68,9 +68,9 @@ def run_once(now: datetime | None = None) -> list[dict]:
     current_bucket = bucket_key(now.isoformat(), WINDOW_MINUTES)
 
     results: list[dict] = []
-    for signature, logs in groups.items():
+    for (service, signature), logs in groups.items():
         counts = historical_bucket_counts(
-            history_logs, signature, WINDOW_MINUTES, BASELINE_WINDOWS, current_bucket
+            history_logs, service, signature, WINDOW_MINUTES, BASELINE_WINDOWS, current_bucket
         )
         baseline = compute_baseline(counts)
         record = compute_anomaly_score(signature, logs, baseline["mean"], baseline["stdev"])
