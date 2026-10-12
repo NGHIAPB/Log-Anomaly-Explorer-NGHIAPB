@@ -17,19 +17,23 @@ anomaly, alert) thay vi lap lai mot khuon mau co dinh:
                        WARN + request cham 3-6s (dung lam da dang level)
     quarantine (10%) - 1 request /simulate-error?fault_type=bad_schema -> 1
                        log SAI schema, test duong quarantine cua Ingestion
-    anomaly (12%)   - burst ngan (5-12s) /simulate-error?fault_type=error,
-                       rate/do dai NGAU NHIEN moi lan -> thuong du de
-                       clustering thay bat thuong nhung CHUA CHAC vuot
-                       ANOMALY_THRESHOLD
-    alert (8%)      - burst manh hon (10-20s), rate cao hon -> nhieu kha
-                       nang vuot ANOMALY_THRESHOLD -> status=alerted
+    anomaly (12%)   - burst ngan (5-12s), fault_type NGAU NHIEN trong
+                       {error, not_found, db_error} (3 signature khac nhau
+                       hoan toan - xem demo-app/src/main.py), rate/do dai
+                       cung ngau nhien moi lan -> thuong du de clustering
+                       thay bat thuong nhung CHUA CHAC vuot ANOMALY_THRESHOLD
+    alert (8%)      - burst manh hon (10-20s), fault_type ngau nhien nhu
+                       tren, rate cao hon -> nhieu kha nang vuot
+                       ANOMALY_THRESHOLD -> status=alerted
 
-QUAN TRONG - vi sao rate/do dai cua burst duoc NGAU NHIEN hoa moi lan (khong
-dung so co dinh): baseline cua Nam tu thich nghi (xem docs/task/runbook.md
-muc "Khi nhan duoc Alert") - neu lap lai DUNG MOT khuon mau burst nhieu lan,
-z-score se giam dan toi khi he thong het con coi do la bat thuong. Ngau
-nhien hoa cuong do giup van co alert that deu dan qua nhieu ngay thay vi
-"tro" dan theo thoi gian.
+QUAN TRONG - vi sao rate/do dai/fault_type cua burst duoc NGAU NHIEN hoa moi
+lan (khong dung mot khuon mau co dinh): baseline cua Nam tu thich nghi (xem
+docs/task/runbook.md muc "Khi nhan duoc Alert") - neu lap lai DUNG MOT khuon
+mau burst nhieu lan, z-score se giam dan toi khi he thong het con coi do la
+bat thuong. Ngau nhien hoa (ca cuong do lan loai loi) giup van co alert that
+deu dan qua nhieu ngay thay vi "tro" dan theo thoi gian, dong thoi tao ra
+nhieu loai cum khac nhau tren dashboard thay vi mai mai chi 1 cum
+"runtimeerror".
 
 Chay nen (mac dinh, dung trong docker-compose.yml, service "synthetic-traffic"):
     python synthetic_traffic.py
@@ -101,16 +105,23 @@ def _do_single_fault(client: httpx.Client, fault_type: str) -> None:
     )
 
 
-def _do_burst(client: httpx.Client, duration: float, rate: float) -> int:
-    """Goi lap /simulate-error?fault_type=error trong `duration` giay. Tra
-    ve so request da goi (de log lai, phuc vu quan sat/debug)."""
+# 3 fault_type cua demo-app sinh log muc ERROR (co the vao cluster that) -
+# khac voi "timeout" (WARN, khong vao cluster) va "bad_schema" (quarantine,
+# khong vao index chinh). Random chon 1 trong 3 moi lan burst de dashboard
+# co nhieu loai cum khac nhau thay vi mai mai chi "runtimeerror".
+_ERROR_FAULT_TYPES = ["error", "not_found", "db_error"]
+
+
+def _do_burst(client: httpx.Client, duration: float, rate: float, fault_type: str) -> int:
+    """Goi lap /simulate-error?fault_type=<fault_type> trong `duration` giay.
+    Tra ve so request da goi (de log lai, phuc vu quan sat/debug)."""
     calls = 0
     deadline = time.monotonic() + duration
     while time.monotonic() < deadline:
         try:
             client.get(
                 f"{DEMO_APP_URL}/simulate-error",
-                params={"rate": rate, "fault_type": "error"},
+                params={"rate": rate, "fault_type": fault_type},
                 headers=_headers(),
                 timeout=10.0,
             )
@@ -141,16 +152,19 @@ def tick(client: httpx.Client, forced_kind: str | None = None) -> None:
         _do_single_fault(client, "bad_schema")
         _log("tick=quarantine -> 1 log sai schema (test duong quarantine)")
     elif kind == "anomaly":
-        # Ngau nhien hoa de tranh baseline "hoc" mot khuon mau co dinh.
+        # Ngau nhien hoa ca fault_type lan rate/do dai, de tranh baseline
+        # "hoc" mot khuon mau co dinh VA de co nhieu loai cum khac nhau.
         duration = random.uniform(5, 12)
         rate = random.uniform(0.4, 0.6)
-        calls = _do_burst(client, duration, rate)
-        _log(f"tick=anomaly -> burst {duration:.1f}s rate={rate:.2f} ({calls} request)")
+        fault_type = random.choice(_ERROR_FAULT_TYPES)
+        calls = _do_burst(client, duration, rate, fault_type)
+        _log(f"tick=anomaly fault_type={fault_type} -> burst {duration:.1f}s rate={rate:.2f} ({calls} request)")
     else:  # alert
         duration = random.uniform(10, 20)
         rate = random.uniform(0.7, 0.95)
-        calls = _do_burst(client, duration, rate)
-        _log(f"tick=alert -> burst {duration:.1f}s rate={rate:.2f} ({calls} request)")
+        fault_type = random.choice(_ERROR_FAULT_TYPES)
+        calls = _do_burst(client, duration, rate, fault_type)
+        _log(f"tick=alert fault_type={fault_type} -> burst {duration:.1f}s rate={rate:.2f} ({calls} request)")
 
 
 def _parse_args() -> argparse.Namespace:
