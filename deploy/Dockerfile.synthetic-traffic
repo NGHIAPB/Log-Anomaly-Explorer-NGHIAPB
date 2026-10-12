@@ -1,0 +1,20 @@
+# Synthetic traffic generator - job nen, phan deploy cua Nghia.
+#
+# Chi goi vao endpoint cong khai co san cua demo-app qua HTTP (httpx), khong
+# can code cua bat ky module nao khac -> khong can build tu goc repo nhu 4
+# Dockerfile con lai, chi can mot minh deploy/synthetic_traffic.py.
+#
+# Build: docker build -f deploy/Dockerfile.synthetic-traffic -t log-anomaly-synthetic-traffic deploy
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir "httpx>=0.27"
+
+COPY synthetic_traffic.py synthetic_traffic.py
+
+RUN useradd -m appuser && chown -R appuser /app
+USER appuser
+
+CMD ["python", "synthetic_traffic.py"]

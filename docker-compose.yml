@@ -68,6 +68,11 @@ services:
     ports:
       - "8001:8001"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8001/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   clustering:
     build:
@@ -108,6 +113,22 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+
+  synthetic-traffic:
+    build:
+      context: deploy
+      dockerfile: Dockerfile.synthetic-traffic
+    container_name: log-anomaly-synthetic-traffic
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    environment:
+      DEMO_APP_URL: http://demo-app:8001
+      SYNTHETIC_TICK_SECONDS: ${SYNTHETIC_TICK_SECONDS:-300}
+    restart: unless-stopped
+    # Job nen, khong co HTTP server - chi goi ra demo-app, khong co port/healthcheck.
+    # Tat bang: `docker compose stop synthetic-traffic` (vd. luc dang demo truc
+    # tiep, tranh traffic gia xen vao luc dang thao tac tay).
 
   gateway:
     image: caddy:2.8-alpine
