@@ -1,6 +1,6 @@
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { StructuredLog } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { LevelTag } from "@/components/StatusBadge";
@@ -59,7 +59,17 @@ export function LogTable({
   const [activeLog, setActiveLog] = useState<StructuredLog | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const table = useReactTable({ data: logs, columns, getCoreRowModel: getCoreRowModel() });
+  // Sap xep moi nhat len dau o day (khong phu thuoc thu tu API tra ve) - vi
+  // Incident View dien "logs" bang cach tra log_ids (sap theo UUID, khong
+  // phai thoi gian - xem clustering/src/anomaly_score.py) qua
+  // LogStore.get_by_ids(), khong dam bao thu tu thoi gian. LogTable dung
+  // chung cho ca Search lan Incident View nen sua 1 cho la du cho ca 2.
+  const sortedLogs = useMemo(
+    () => [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    [logs],
+  );
+
+  const table = useReactTable({ data: sortedLogs, columns, getCoreRowModel: getCoreRowModel() });
   const rows = table.getRowModel().rows;
 
   const virtualizer = useVirtualizer({
