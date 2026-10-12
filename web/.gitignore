@@ -2,27 +2,20 @@
 
 # dependencies
 /node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
 
 # testing
 /coverage
+/playwright-report
+/test-results
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# vite build output
+/dist
+/dist-ssr
 
 # misc
 .DS_Store
 *.pem
+*.local
 
 # debug
 npm-debug.log*
@@ -39,4 +32,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
