@@ -79,6 +79,7 @@ Tailwind/shadcn, deploy lên Vercel, gọi trực tiếp `query-api`. Xem
 | Load test | `load-tests/` | Minh (ingestion), Nghĩa (end-to-end) |
 | Runbook | `docs/task/runbook.md` | Nghĩa |
 | Deploy (Web) | `docker-compose.yml`, `docs/task/deployment.md` | Nghĩa |
+| Alert gửi thật (đầu-cuối) | `clustering/scripts/alert_webhook_receiver.py` + payload thật trong `clustering/README.md` | Nam |
 
 ## Quy ước làm việc
 

@@ -6,6 +6,19 @@
 
 1. **Nhận alert** (webhook/email, payload từ `ALERT_WEBHOOK_URL` — cấu hình trong `clustering/src/alert.py`)
    — nội dung gồm `cluster_id`, `score`, `service`, `first_seen`.
+
+   > ⚠️ **Alert hiện lặp lại mỗi chu kỳ clustering** (mặc định 60s, `CLUSTERING_INTERVAL_SECONDS`)
+   > trong suốt thời gian score còn vượt ngưỡng — chưa có cơ chế chống trùng/cooldown. Một sự cố
+   > kéo dài 30 phút sẽ sinh ~30 alert **giống hệt nhau cho cùng một `cluster_id`**. Khi xử lý:
+   > coi nhiều alert cùng `cluster_id` là **một sự cố duy nhất**, đừng mở nhiều incident song song.
+   > Nếu kênh nhận alert (Slack/email) bị nhiễu quá mức, tạm thời tăng `CLUSTERING_INTERVAL_SECONDS`
+   > hoặc `ANOMALY_THRESHOLD` cho tới khi có cơ chế dedup.
+   >
+   > **Lưu ý về baseline**: nếu cùng một loại lỗi lặp lại đều đặn nhiều khung thời gian liên tiếp,
+   > z-score sẽ **giảm dần** và hệ thống sẽ **ngừng alert** dù lỗi vẫn đang xảy ra (baseline đã coi
+   > mức lỗi đó là "bình thường"). Đây là hành vi đúng của thuật toán phát hiện bất thường dựa trên
+   > baseline, nhưng nghĩa là: **alert im lặng không đồng nghĩa với hết lỗi** — với sự cố kéo dài,
+   > hãy theo dõi thêm `GET /search?service=...` hoặc số log ERROR tuyệt đối, đừng chỉ dựa vào alert.
 2. **Mở Incident View**: `GET /clusters/{cluster_id}` (query-api, port `8002`) để xem chi tiết cụm —
    `score`, `status`, `signature`, `first_seen`/`last_seen`, và `logs` (đã tra sẵn từ `log_ids`, không
    cần tự gọi `/search` để lấy từng log một).
