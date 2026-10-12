@@ -31,17 +31,31 @@ z-score se giam dan toi khi he thong het con coi do la bat thuong. Ngau
 nhien hoa cuong do giup van co alert that deu dan qua nhieu ngay thay vi
 "tro" dan theo thoi gian.
 
-Chay (dung trong docker-compose.yml o goc repo, service "synthetic-traffic"):
-    python -m deploy.synthetic_traffic
+Chay nen (mac dinh, dung trong docker-compose.yml, service "synthetic-traffic"):
+    python synthetic_traffic.py
+
+Ban THU CONG 1 tick ngau nhien ngay lap tuc (khong doi 5 phut) - dung khi can
+du lieu "song" gap de demo/kiem thu, chay song song voi container nen dang
+chay binh thuong, khong xung dot:
+    docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once
+
+Ban nhieu tick lien tiep (vd. 10 tick, cach nhau 3s) de nhanh chong co du
+lieu da dang truoc khi demo:
+    docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --count 10 --interval 3
+
+Ep dung 1 kieu cu the (bo qua random trong so) - vd. muon chac chan co ngay
+1 cum "alerted" de demo Incident View:
+    docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert
 
 Bien moi truong:
     DEMO_APP_URL            - mac dinh http://demo-app:8001 (ten service trong
                                mang Docker noi bo, xem docker-compose.yml)
-    SYNTHETIC_TICK_SECONDS  - mac dinh 300 (5 phut)
+    SYNTHETIC_TICK_SECONDS  - mac dinh 300 (5 phut) - chi dung cho che do chay nen
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 import time
@@ -107,9 +121,15 @@ def _do_burst(client: httpx.Client, duration: float, rate: float) -> int:
     return calls
 
 
-def tick(client: httpx.Client) -> None:
-    names, weights = zip(*_TICK_WEIGHTS)
-    kind = random.choices(names, weights=weights, k=1)[0]
+_TICK_KINDS = [name for name, _ in _TICK_WEIGHTS]
+
+
+def tick(client: httpx.Client, forced_kind: str | None = None) -> None:
+    if forced_kind is not None:
+        kind = forced_kind
+    else:
+        names, weights = zip(*_TICK_WEIGHTS)
+        kind = random.choices(names, weights=weights, k=1)[0]
 
     if kind == "normal":
         _do_normal(client)
@@ -133,7 +153,47 @@ def tick(client: httpx.Client) -> None:
         _log(f"tick=alert -> burst {duration:.1f}s rate={rate:.2f} ({calls} request)")
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--once", action="store_true",
+        help="Chay dung 1 tick ngay lap tuc roi thoat (thay vi vong lap nen vo han)",
+    )
+    parser.add_argument(
+        "--count", type=int, default=None,
+        help="Chay N tick lien tiep roi thoat (vd. --count 10 de nhanh chong co du lieu da dang)",
+    )
+    parser.add_argument(
+        "--interval", type=float, default=3.0,
+        help="So giay nghi giua cac tick khi dung --count (mac dinh 3s, KHONG dung TICK_SECONDS cua che do nen)",
+    )
+    parser.add_argument(
+        "--kind", choices=_TICK_KINDS, default=None,
+        help="Ep dung 1 kieu tick cu the thay vi chon ngau nhien theo trong so (vd. --kind alert)",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
+
+    if args.once or args.count is not None:
+        # Che do thu cong: chay 1 hoac N tick roi thoat, KHONG vao vong lap
+        # nen vo han. Dung song song voi container dang chay binh thuong qua
+        # `docker exec` - khong xung dot vi httpx khong giu state gi chung.
+        n = args.count if args.count is not None else 1
+        _log(f"che do thu cong: {n} tick, interval={args.interval}s, kind={args.kind or 'ngau nhien'}")
+        with httpx.Client() as client:
+            for i in range(n):
+                try:
+                    tick(client, forced_kind=args.kind)
+                except Exception as exc:
+                    _log(f"loi: {type(exc).__name__}: {exc}")
+                if i < n - 1:
+                    time.sleep(args.interval)
+        _log("xong che do thu cong")
+        return
+
     _log(f"bat dau - DEMO_APP_URL={DEMO_APP_URL} TICK_SECONDS={TICK_SECONDS}")
     with httpx.Client() as client:
         while True:

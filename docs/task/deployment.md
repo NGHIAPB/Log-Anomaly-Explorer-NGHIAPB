@@ -63,6 +63,24 @@ docker compose stop synthetic-traffic
 docker compose start synthetic-traffic   # bật lại
 ```
 
+### Bắn thủ công (không đợi chu kỳ 5 phút)
+
+Chạy song song với container nền đang chạy bình thường, không xung đột (dùng `docker exec`
+để spawn một tiến trình Python riêng bên trong cùng container):
+
+```bash
+# 1 tick ngau nhien ngay lap tuc
+docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once
+
+# 10 tick lien tiep, cach nhau 2s - nhanh chong co du lieu da dang truoc khi demo
+docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --count 10 --interval 2
+
+# Ep dung 1 kieu cu the (bo qua random) - vd. muon chac chan co ngay 1 cum "alerted"
+docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert
+```
+
+`--kind` nhận 1 trong 5 giá trị: `normal`, `timeout`, `quarantine`, `anomaly`, `alert`.
+
 **Lưu ý quan trọng**: `ingestion/docker-compose.yml` (của Minh) là file riêng, chỉ
 dựng OpenSearch cho **dev cục bộ khi chạy `uvicorn --reload` từng service thủ công**
 (xem `ingestion/README.md`). File `docker-compose.yml` ở gốc repo là một stack
