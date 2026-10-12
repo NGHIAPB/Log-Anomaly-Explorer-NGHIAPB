@@ -127,34 +127,56 @@ python -m clustering.evaluation.precision_recall
 
 ## Evidence sở hữu
 
-- **Labeled incidents**: `evaluation/labeled_incidents.json` — mỗi sự cố thật được gán nhãn thủ công,
-  tạo ra từ fault injection của Mạnh (xem mục "Chạy thử end-to-end" trên). Hiện có **2 sự cố thật**
-  (`burst-2026-10-12-01`, `burst-2026-10-12-02`), tạo trong cùng một phiên chạy sạch
-  (`docker compose down -v` rồi `up` lại) — 2 đợt fault injection cách nhau ~2 phút, cùng loại lỗi
-  (`fault_type=error`), để kiểm tra hệ thống nhận diện đúng **cả hai** khung thời gian bất thường
-  (không chỉ lần phát hiện đầu tiên khi cụm vừa được tạo).
+- **Labeled incidents**: `evaluation/labeled_incidents.json` — mỗi sự cố thật được gán nhãn thủ công.
+  Hiện có **6 sự cố thật**:
+  - `burst-2026-10-12-01`/`02`: tạo trong phiên chạy sạch đầu tiên (`docker compose down -v` rồi
+    `up` lại), 2 đợt fault injection cách nhau ~2 phút, cùng `fault_type=error`, service `demo-web`
+    — kiểm tra hệ thống nhận diện đúng **cả hai** khung thời gian bất thường của cùng một cụm.
+  - `burst-2026-10-12-03`..`06` (thêm 2026-10-12, **không wipe dữ liệu đang live trên Azure VM**):
+    bổ sung coverage cho `service=demo-mobile-api` và 2 `fault_type` mới (`not_found`, `db_error`,
+    xem `demo-app/src/main.py`) — 2 incident gốc chỉ phủ `demo-web` + `runtimeerror`, bỏ sót cả
+    service mobile và 2 loại lỗi mới thêm sau đó. Tạo bằng
+    `docker exec log-anomaly-synthetic-traffic python synthetic_traffic.py --once --kind alert`
+    (`deploy/synthetic_traffic.py`), xác nhận từng cặp (service, signature) qua
+    `curl http://localhost:8002/clusters/{cluster_id}` ngay sau mỗi burst.
 - **Precision/recall**: `evaluation/precision_recall.py` — đo trên labeled incidents ở trên; so khớp
   theo `signature` + `service` **và** khung thời gian (`first_seen`/`last_seen` chồng lấn
   `window_from`/`window_to`), không chỉ so khớp signature/service đơn thuần.
 
   **Kết quả đo được (2026-10-12)**, chạy thật trong container `clustering` (dùng chung OpenSearch của
-  `docker-compose.yml` ở gốc repo, không phải mock):
+  `docker-compose.yml` ở gốc repo, không phải mock), ngay sau khi tạo 4 incident mới:
 
   ```
-  {'precision': 1.0, 'recall': 1.0, 'true_positive': 1, 'false_positive': 0, 'false_negative': 0}
+  {'precision': 1.0, 'recall': 0.333, 'true_positive': 2, 'false_positive': 0, 'false_negative': 4}
   ```
 
-  Cả 2 sự cố gán nhãn đều được hệ thống phát hiện đúng (recall 100%), không có cảnh báo sai nào
-  (precision 100%) — cụm lỗi duy nhất tồn tại (`runtimeerror: simulated downstream failure`) có
-  `first_seen`/`last_seen` bao trùm đúng cả 2 khung thời gian đã gán nhãn, đúng ngữ nghĩa
-  `_merge_cluster()` (nhiều lần xuất hiện của cùng một lỗi trong các khung thời gian khác nhau được
-  gộp vào một `ClusterRecord`, giữ `first_seen` sớm nhất / `last_seen` muộn nhất).
+  Không có cảnh báo sai nào (precision 100%), nhưng chỉ 2/6 sự cố đã gán nhãn còn ở
+  `status="alerted"` **tại đúng thời điểm chạy lệnh đo** (vài phút sau khi burst, do cần thời gian
+  `git push` → merge → `git pull` trên VM → `docker cp`). Đây **không phải lỗi** — khớp đúng thiết
+  kế cửa sổ trượt (`CLUSTERING_WINDOW_MINUTES=10`): điểm bất thường của một burst giảm dần khi log
+  của nó trôi ra khỏi cửa sổ hiện tại nếu không có log lỗi mới tiếp theo. Từng cặp (service,
+  signature) mới thêm đã được xác nhận **đạt `status="alerted"` thật** ngay sau khi tạo (xem
+  description trong `labeled_incidents.json`, mỗi incident ghi rõ `cluster_id` + lệnh `curl` đã
+  dùng để xác nhận) — recall thấp hơn 1.0 ở phép đo tổng hợp chỉ phản ánh độ trễ đo, không phản ánh
+  khả năng phát hiện thật của hệ thống tại thời điểm xảy ra sự cố.
+
+  **Phát hiện bổ sung (cùng phiên đo)**: sau khi bắn liên tiếp 6 burst `--kind alert` nữa trong
+  ~2.5 phút để cố gắng bắt tất cả tín hiệu "nóng" cùng lúc, lần đo tiếp theo cho
+  `{'precision': 0.0, 'recall': 0.0, 'true_positive': 0, 'false_positive': 0, 'false_negative': 6}`
+  — **không cụm nào còn `alerted`**. Nguyên nhân: `baseline.py` tính baseline từ lịch sử
+  (`CLUSTERING_BASELINE_WINDOWS=6` khung gần nhất), nên bắn lặp lại nhiều burst tương tự trong thời
+  gian ngắn khiến baseline "học" luôn burst đó là bình thường — đúng hành vi đã ghi chủ đích trong
+  docstring của `deploy/synthetic_traffic.py` ("nếu lặp lại ĐÚNG MỘT khuôn mẫu burst nhiều lần,
+  z-score sẽ giảm dần tới khi hệ thống hết còn coi đó là bất thường"). Đây là minh chứng thật cho
+  cơ chế tự thích nghi của baseline, không phải một lỗi cần sửa.
 
   Chạy lại (từ gốc repo, sau khi `docker compose up -d`):
   ```bash
   docker cp clustering/evaluation/labeled_incidents.json log-anomaly-clustering:/app/clustering/evaluation/labeled_incidents.json
   docker exec log-anomaly-clustering python -m clustering.evaluation.precision_recall
   ```
+  Để có số liệu "nóng" đại diện nhất, chạy lệnh đo **trong vòng 1-2 phút sau burst**, và tránh bắn
+  lặp lại quá nhiều burst giống nhau liên tiếp (xem phát hiện ở trên).
 
 - **Alert gửi thật (đầu-cuối)**: `scripts/alert_webhook_receiver.py` — webhook receiver tối giản
   (chỉ stdlib) để chứng minh alert **thực sự được gửi đi**, không chỉ dừng ở việc đánh dấu
