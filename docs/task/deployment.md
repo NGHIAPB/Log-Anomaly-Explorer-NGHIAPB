@@ -18,6 +18,9 @@ Internet ──▶ gateway (Caddy, :80/:443)
 
 clustering (Nam) — job nền, không có HTTP endpoint, tự đọc/ghi OpenSearch theo chu kỳ.
 
+synthetic-traffic (Nghĩa) — job nền, tự gọi vào demo-app mỗi 5 phút (mặc định) để
+dashboard luôn có dữ liệu sống mà không cần ai bắn tay. Xem mục riêng bên dưới.
+
 Tất cả 4 service + clustering đều đọc/ghi chung 1 OpenSearch (database), nằm
 HOÀN TOÀN NỘI BỘ trong mạng Docker — không publish port 9200 ra ngoài, không
 bao giờ bị truy cập trực tiếp từ Internet.
@@ -27,11 +30,38 @@ File liên quan (tất cả ở gốc repo, đều là phần việc deploy củ
 
 | File | Vai trò |
 |---|---|
-| `docker-compose.yml` | Định nghĩa toàn bộ stack (opensearch, ingestion, demo-app, clustering, query-api, gateway) |
+| `docker-compose.yml` | Định nghĩa toàn bộ stack (opensearch, ingestion, demo-app, clustering, query-api, synthetic-traffic, gateway) |
 | `ingestion/Dockerfile`, `demo-app/Dockerfile`, `clustering/Dockerfile`, `query-api/Dockerfile` | Image cho từng service — build từ **gốc repo** (không phải từ trong từng thư mục), vì `ingestion`/`clustering`/`query-api` import chéo lẫn nhau và đọc schema trong `docs/architect/contracts/` theo đường dẫn tương đối tới gốc repo |
 | `deploy/Caddyfile` | Cấu hình reverse-proxy — cổng vào duy nhất, định tuyến theo path |
+| `deploy/synthetic_traffic.py`, `deploy/Dockerfile.synthetic-traffic` | Traffic generator nền — xem mục riêng bên dưới |
 | `.env.example` | Mẫu biến môi trường cho `docker-compose.yml` |
 | `.dockerignore` | Loại trừ `.venv/`, `.git/`, cache... khỏi build context |
+
+## Synthetic traffic — dữ liệu "sống" tự động, không cần bắn tay
+
+`demo-app` hoàn toàn thụ động — **không** có cơ chế tự sinh log nào (chỉ phản ứng khi có
+request HTTP gọi tới `/api/items`/`/simulate-error`). Container `synthetic-traffic` giải
+quyết việc này: mỗi `SYNTHETIC_TICK_SECONDS` giây (mặc định **300s = 5 phút**), tự gọi vào
+demo-app, chọn ngẫu nhiên 1 trong 5 kiểu theo trọng số để log luôn đa dạng:
+
+| Kiểu | Tỷ lệ | Hiệu ứng |
+|---|---|---|
+| `normal` | 60% | 1 log INFO (baseline), ~30% kèm header mobile |
+| `timeout` | 10% | 1 log WARN (request giả lập chậm) |
+| `quarantine` | 10% | 1 log sai schema — test đường quarantine của Ingestion |
+| `anomaly` | 12% | Burst ngắn (5-12s) log ERROR, cường độ ngẫu nhiên — có thể lên `anomalous` |
+| `alert` | 8% | Burst mạnh hơn (10-20s) — nhiều khả năng vượt `ANOMALY_THRESHOLD` → `alerted` |
+
+**Vì sao cường độ ngẫu nhiên hoá mỗi lần** (không dùng số cố định): baseline của Nam tự
+thích nghi theo thời gian (xem `docs/task/runbook.md`) — lặp đúng một khuôn mẫu burst nhiều
+lần sẽ khiến z-score giảm dần tới khi hệ thống ngừng coi đó là bất thường. Ngẫu nhiên hoá
+giúp vẫn có alert thật đều đặn qua nhiều ngày thay vì "trơ" dần.
+
+**Tắt tạm thời** (vd. lúc đang demo trực tiếp, tránh traffic giả xen vào thao tác tay):
+```bash
+docker compose stop synthetic-traffic
+docker compose start synthetic-traffic   # bật lại
+```
 
 **Lưu ý quan trọng**: `ingestion/docker-compose.yml` (của Minh) là file riêng, chỉ
 dựng OpenSearch cho **dev cục bộ khi chạy `uvicorn --reload` từng service thủ công**
