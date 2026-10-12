@@ -105,7 +105,30 @@ python -m clustering.evaluation.precision_recall
 ## Evidence sở hữu
 
 - **Labeled incidents**: `evaluation/labeled_incidents.json` — mỗi sự cố thật được gán nhãn thủ công,
-  tạo ra từ fault injection của Mạnh (xem mục "Chạy thử end-to-end" trên)
+  tạo ra từ fault injection của Mạnh (xem mục "Chạy thử end-to-end" trên). Hiện có **2 sự cố thật**
+  (`burst-2026-10-12-01`, `burst-2026-10-12-02`), tạo trong cùng một phiên chạy sạch
+  (`docker compose down -v` rồi `up` lại) — 2 đợt fault injection cách nhau ~2 phút, cùng loại lỗi
+  (`fault_type=error`), để kiểm tra hệ thống nhận diện đúng **cả hai** khung thời gian bất thường
+  (không chỉ lần phát hiện đầu tiên khi cụm vừa được tạo).
 - **Precision/recall**: `evaluation/precision_recall.py` — đo trên labeled incidents ở trên; so khớp
   theo `signature` + `service` **và** khung thời gian (`first_seen`/`last_seen` chồng lấn
-  `window_from`/`window_to`), không chỉ so khớp signature/service đơn thuần
+  `window_from`/`window_to`), không chỉ so khớp signature/service đơn thuần.
+
+  **Kết quả đo được (2026-10-12)**, chạy thật trong container `clustering` (dùng chung OpenSearch của
+  `docker-compose.yml` ở gốc repo, không phải mock):
+
+  ```
+  {'precision': 1.0, 'recall': 1.0, 'true_positive': 1, 'false_positive': 0, 'false_negative': 0}
+  ```
+
+  Cả 2 sự cố gán nhãn đều được hệ thống phát hiện đúng (recall 100%), không có cảnh báo sai nào
+  (precision 100%) — cụm lỗi duy nhất tồn tại (`runtimeerror: simulated downstream failure`) có
+  `first_seen`/`last_seen` bao trùm đúng cả 2 khung thời gian đã gán nhãn, đúng ngữ nghĩa
+  `_merge_cluster()` (nhiều lần xuất hiện của cùng một lỗi trong các khung thời gian khác nhau được
+  gộp vào một `ClusterRecord`, giữ `first_seen` sớm nhất / `last_seen` muộn nhất).
+
+  Chạy lại (từ gốc repo, sau khi `docker compose up -d`):
+  ```bash
+  docker cp clustering/evaluation/labeled_incidents.json log-anomaly-clustering:/app/clustering/evaluation/labeled_incidents.json
+  docker exec log-anomaly-clustering python -m clustering.evaluation.precision_recall
+  ```

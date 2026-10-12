@@ -1,12 +1,20 @@
 {
-  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT (tao ra bang demo-app /simulate-error qua scripts/trigger_fault_window.py) da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py.",
+  "$comment": "GitHub evidence: labeled incidents. Moi phan tu la mot su co THAT (tao ra bang demo-app /simulate-error qua scripts/trigger_fault_window.py) da duoc con nguoi xac nhan, dung lam ground-truth cho precision_recall.py. 2 incident duoi day duoc tao lai sach tu dau (docker compose down -v) trong cung 1 phien, 2 burst fault injection rieng biet cach nhau ~2 phut, de kiem tra ca 2 window deu duoc he thong nhan dien dung (khong chi 1 lan duy nhat).",
   "incidents": [
     {
-      "incident_id": "burst-2026-10-10-01",
-      "window_from": "2026-10-10T02:15:50.375012Z",
-      "window_to": "2026-10-10T02:17:57.529391Z",
+      "incident_id": "burst-2026-10-12-01",
+      "window_from": "2026-10-12T04:13:57.395595Z",
+      "window_to": "2026-10-12T04:14:12.449714Z",
       "service": "demo-web",
-      "description": "Tao bang: demo-app + ingestion + OpenSearch that (docker compose), goi lap lai /simulate-error?rate=0.8&fault_type=error nhieu lan. Chay `python -m clustering.src.main` (CLUSTER_STORE_BACKEND=opensearch, mac dinh) ghi 1 ClusterRecord thuc vao index `clusters`: 13 log ERROR cung signature, score=13.0 (chua co lich su baseline truoc do nen rơi vao nhanh fallback score=count trong anomaly_score.compute_anomaly_score), vuot ANOMALY_THRESHOLD=2.0 -> status=alerted. Xac nhan qua: curl http://localhost:9200/clusters/_search?pretty.",
+      "description": "Tao bang: docker compose down -v roi up lai (OpenSearch sach hoan toan), demo-app + ingestion + OpenSearch that. Goi `python demo-app/scripts/trigger_fault_window.py --duration 15 --rate 0.9 --interval 0.05 --fault-type error` (190 lan goi, 167 lan gay loi that /simulate-error). Job clustering (chu ky mac dinh 60s) tu dong nhan: ClusterRecord score=167.0 (chua co baseline lich su -> fallback score=count, giong co che da ghi trong incident dau tien), vuot ANOMALY_THRESHOLD=2.0 -> status=alerted. Xac nhan qua: curl http://localhost:8002/clusters.",
+      "expected_cluster_signature": "runtimeerror: simulated downstream failure"
+    },
+    {
+      "incident_id": "burst-2026-10-12-02",
+      "window_from": "2026-10-12T04:15:56.169157Z",
+      "window_to": "2026-10-12T04:16:11.229805Z",
+      "service": "demo-web",
+      "description": "Tiep ngay sau burst-2026-10-12-01 (cung phien, khong down -v giua 2 lan) - goi lai `trigger_fault_window.py --duration 15 --rate 0.9 --interval 0.05 --fault-type error` lan 2 (192 lan goi, 174 lan gay loi). Vi cung signature, clustering gop (merge) vao DUNG 1 ClusterRecord da co (cluster_id khong doi, deterministic theo signature - xem clustering/src/storage.py::_merge_cluster): first_seen giu nguyen tu burst 01, last_seen cap nhat sang cuoi burst 02, score tang len 341.0. Day la truong hop that: 2 giai doan bat thuong rieng biet cung mot loai loi goc, he thong phai nhan dien dung CA HAI khung thoi gian deu thuoc ve cum da alert, khong chi lan dau. Xac nhan qua: curl http://localhost:8002/clusters (first_seen/last_seen bao trum ca 2 window).",
       "expected_cluster_signature": "runtimeerror: simulated downstream failure"
     }
   ]
