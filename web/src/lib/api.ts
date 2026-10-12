@@ -3,10 +3,10 @@
 //
 // Frontend (web/, deploy Vercel) va backend (query-api, deploy rieng - xem
 // docs/task/deployment.md) la 2 noi deploy khac nhau, nen base URL luon cau
-// hinh qua bien moi truong, khong hardcode.
+// hinh qua bien moi truong (VITE_API_BASE_URL), khong hardcode.
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:8002";
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
+  ?.replace(/\/$/, "") || "http://localhost:8002";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR" | "FATAL";
 
@@ -45,6 +45,7 @@ export class ApiError extends Error {
   constructor(message: string, status: number) {
     super(message);
     this.status = status;
+    this.name = "ApiError";
   }
 }
 
@@ -56,10 +57,10 @@ async function getJson<T>(path: string, params?: Record<string, string | undefin
 
   let res: Response;
   try {
-    res = await fetch(url.toString(), { cache: "no-store" });
+    res = await fetch(url.toString());
   } catch {
     throw new ApiError(
-      `Khong ket noi duoc toi API (${API_BASE_URL}). Kiem tra NEXT_PUBLIC_API_BASE_URL va backend co dang chay khong.`,
+      `Khong ket noi duoc toi API (${API_BASE_URL}). Kiem tra VITE_API_BASE_URL va backend co dang chay khong.`,
       0,
     );
   }

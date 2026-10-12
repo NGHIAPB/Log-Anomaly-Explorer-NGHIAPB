@@ -57,8 +57,10 @@ curl "http://localhost/demo/simulate-error?rate=1.0"    # fault injection qua ga
 ```
 
 **Giao diện người dùng thật** (Search + Incident View, không phải Swagger UI): [`web/`](../../web/)
-— Next.js, deploy lên Vercel, xem mục riêng bên dưới. Trỏ `NEXT_PUBLIC_API_BASE_URL` về
-`http://localhost` (gateway) khi chạy dev local cùng stack này.
+— React + Vite, deploy lên Vercel, xem [`web/README.md`](../../web/README.md). Khi dev local
+cùng stack này, trỏ `VITE_API_BASE_URL` về `http://localhost` (gateway); khi trỏ sang một
+backend đã deploy thật cho một trang Vercel (chạy HTTPS), backend đó cũng phải là HTTPS —
+trình duyệt chặn Mixed Content nếu gọi HTTP thuần từ trang HTTPS.
 
 **Swagger UI tự sinh của FastAPI** (bổ sung, dùng để gọi thử API thô trực tiếp từ trình duyệt,
 nút "Try it out"):

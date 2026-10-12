@@ -1,10 +1,11 @@
 import type { ClusterStatus, LogLevel } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 const CLUSTER_STYLES: Record<ClusterStatus, string> = {
-  normal: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700",
-  anomalous:
-    "bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-800",
-  alerted: "bg-red-100 text-red-700 ring-red-200 dark:bg-red-900/40 dark:text-red-300 dark:ring-red-800",
+  normal: "bg-muted text-muted-foreground",
+  anomalous: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  alerted: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
 const CLUSTER_LABELS: Record<ClusterStatus, string> = {
@@ -15,17 +16,15 @@ const CLUSTER_LABELS: Record<ClusterStatus, string> = {
 
 export function ClusterStatusBadge({ status }: { status: ClusterStatus }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${CLUSTER_STYLES[status]}`}
-    >
+    <Badge variant="outline" className={cn("gap-1.5 border-transparent font-medium", CLUSTER_STYLES[status])}>
       {status === "alerted" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />}
       {CLUSTER_LABELS[status]}
-    </span>
+    </Badge>
   );
 }
 
 const LEVEL_STYLES: Record<LogLevel, string> = {
-  DEBUG: "text-slate-400",
+  DEBUG: "text-muted-foreground",
   INFO: "text-sky-600 dark:text-sky-400",
   WARN: "text-amber-600 dark:text-amber-400",
   ERROR: "text-red-600 dark:text-red-400",
@@ -33,5 +32,5 @@ const LEVEL_STYLES: Record<LogLevel, string> = {
 };
 
 export function LevelTag({ level }: { level: LogLevel }) {
-  return <span className={`font-mono text-xs font-medium ${LEVEL_STYLES[level]}`}>{level}</span>;
+  return <span className={cn("font-mono text-xs font-medium", LEVEL_STYLES[level])}>{level}</span>;
 }

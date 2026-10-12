@@ -65,8 +65,9 @@ Dựng OpenSearch (database) + cả 4 service (ingestion, demo-app, clustering, 
 một reverse-proxy (Caddy) làm cổng vào duy nhất trên port `80`. Chi tiết kiến trúc, cách
 deploy lên VPS/cloud thật, gắn domain + HTTPS tự động: [`docs/task/deployment.md`](docs/task/deployment.md) (Nghĩa).
 
-**Giao diện người dùng** (không phải Swagger UI tự sinh): [`web/`](web/) — Next.js, deploy lên
-Vercel, gọi trực tiếp `query-api`. Xem [`web/README.md`](web/README.md) để chạy thử/deploy.
+**Giao diện người dùng** (không phải Swagger UI tự sinh): [`web/`](web/) — React + Vite +
+Tailwind/shadcn, deploy lên Vercel, gọi trực tiếp `query-api`. Xem
+[`web/README.md`](web/README.md) để chạy thử/deploy.
 
 ## GitHub evidence bắt buộc
 
