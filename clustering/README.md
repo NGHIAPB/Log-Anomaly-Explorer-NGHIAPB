@@ -132,3 +132,45 @@ python -m clustering.evaluation.precision_recall
   docker cp clustering/evaluation/labeled_incidents.json log-anomaly-clustering:/app/clustering/evaluation/labeled_incidents.json
   docker exec log-anomaly-clustering python -m clustering.evaluation.precision_recall
   ```
+
+- **Alert gửi thật (đầu-cuối)**: `scripts/alert_webhook_receiver.py` — webhook receiver tối giản
+  (chỉ stdlib) để chứng minh alert **thực sự được gửi đi**, không chỉ dừng ở việc đánh dấu
+  `status="alerted"` trong database.
+
+  **Kết quả đo được (2026-10-12)** — payload thật nhận được tại webhook, đúng hợp đồng trong
+  [`api-contract.md`](../docs/architect/contracts/api-contract.md) mục "Alert":
+
+  ```json
+  {
+    "received_at": "2026-10-12T04:34:28.043629+00:00",
+    "payload": {
+      "cluster_id": "f0dc83a26d34b25458441518d7b93357",
+      "score": 133.0,
+      "service": "demo-web",
+      "first_seen": "2026-10-12T04:31:37.198447+00:00"
+    }
+  }
+  ```
+
+  Cách tái lập (từ gốc repo):
+  ```bash
+  # 1. Chay receiver tren may host
+  python -m clustering.scripts.alert_webhook_receiver --port 9099
+
+  # 2. Tro ALERT_WEBHOOK_URL vao receiver roi dung stack (terminal khac)
+  echo "ALERT_WEBHOOK_URL=http://host.docker.internal:9099/alert" > .env
+  docker compose down -v && docker compose up -d    # -v de baseline sach, xem luu y ben duoi
+
+  # 3. Ban mot dot loi that -> doi toi 60s (chu ky clustering)
+  python demo-app/scripts/trigger_fault_window.py --duration 12 --rate 0.9 --interval 0.05
+  ```
+
+  **2 lưu ý quan trọng rút ra khi kiểm chứng:**
+  1. **Baseline phải sạch thì burst mới "bất thường"**: nếu chạy nhiều đợt lỗi giống hệt nhau liên
+     tiếp trên cùng dữ liệu, z-score của đợt sau **giảm dần** (đo thực tế: đợt lỗi 138 log chỉ đạt
+     score `0.639` → không alert) vì baseline đã "học" rằng mức đó là bình thường với signature này.
+     Đây là hành vi **đúng** của thuật toán, không phải lỗi — nhưng khi demo/kiểm thử alert cần
+     `docker compose down -v` trước để mô phỏng đúng tình huống "sự cố xảy ra lần đầu".
+  2. **Alert hiện lặp lại mỗi chu kỳ** (đo thực tế: 2 alert trong ~70s với `CLUSTERING_INTERVAL_SECONDS=60`)
+     khi score còn vượt ngưỡng — chưa có cơ chế chống trùng/cooldown. Một sự cố kéo dài 30 phút sẽ
+     sinh ~30 alert giống nhau. Xem `docs/task/runbook.md` mục "Khi nhận được Alert".

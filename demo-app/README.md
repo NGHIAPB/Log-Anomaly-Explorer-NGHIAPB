@@ -23,6 +23,17 @@ uvicorn src.main:app --reload --port 8001
 - `GET /health` — kiểm tra service đang chạy
 - `GET /api/items` — sinh log INFO bình thường (baseline, `service=demo-web`)
 - `GET /api/items` kèm header `X-Client: mobile` — baseline cho luồng mobile (`service=demo-mobile-api`)
+
+  Đã kiểm chứng trên bản deploy thật (2026-10-12): gọi 12 request baseline + 10 request
+  `/simulate-error` kèm header `X-Client: mobile` → sinh ra **22 log thật** mang
+  `service=demo-mobile-api` (gồm cả INFO lẫn ERROR), xác nhận qua
+  `GET /search?service=demo-mobile-api`. Nhờ vậy nhánh "Mobile" trong sơ đồ kiến trúc
+  (`docs/architect/architecture-sod.png`) có dữ liệu thật, và bộ lọc theo `service` trên UI
+  có ít nhất 2 service để phân biệt.
+  ```bash
+  curl -H "X-Client: mobile" "<BASE_URL>/demo/api/items"
+  curl -H "X-Client: mobile" "<BASE_URL>/demo/simulate-error?rate=1.0"
+  ```
 - `GET /simulate-error?rate=0.3&fault_type=error` — tiêm lỗi có xác suất `rate`, dùng để tạo giai đoạn bất thường có kiểm soát
 
 ### Trace thật (OpenTelemetry)
