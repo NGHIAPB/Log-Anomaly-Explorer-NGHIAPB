@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import os
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +22,12 @@ os.environ["CLUSTER_STORE_BACKEND"] = "memory"
 
 _main = importlib.import_module("query-api.src.main")
 client = TestClient(_main.app)
+
+# Thoi diem TUONG DOI, khong hardcode ngay cu the: /search mac dinh chi tra
+# 24h gan nhat va /clusters mac dinh theo RETENTION_DAYS, nen log/cluster gan
+# ngay co dinh se tu roi ra ngoai cua so mac dinh khi thoi gian troi qua
+# (da gap that: test viet ngay 2026-10-12 bat dau do ngay 2026-10-22).
+_NOW = datetime.now(timezone.utc).isoformat()
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +40,7 @@ def _reset_stores():
 
 
 def _write_log(log_id: str, **fields) -> None:
-    base = {"timestamp": "2026-10-12T09:00:00Z", "service": "demo-web", "message": "x"}
+    base = {"timestamp": _NOW, "service": "demo-web", "message": "x"}
     base.update(fields)
     _main.log_store.write_log(log_id, base)
 
@@ -43,8 +50,8 @@ def _write_cluster(cluster_id: str, **fields) -> None:
         "cluster_id": cluster_id,
         "score": 1.0,
         "log_ids": [],
-        "first_seen": "2026-10-12T09:00:00Z",
-        "last_seen": "2026-10-12T09:00:00Z",
+        "first_seen": _NOW,
+        "last_seen": _NOW,
         "status": "normal",
     }
     base.update(fields)
@@ -93,7 +100,7 @@ class TestSearch:
 
     def test_khong_truyen_from_mac_dinh_24h_gan_nhat(self):
         _write_log("cu", timestamp="2020-01-01T00:00:00Z")
-        _write_log("moi", timestamp="2026-10-12T09:00:00Z")
+        _write_log("moi", timestamp=_NOW)
         resp = client.get("/search")
         body = resp.json()
         assert body["total"] == 1
@@ -118,7 +125,7 @@ class TestListClusters:
 
     def test_khong_truyen_since_mac_dinh_theo_retention(self):
         _write_cluster("cu", last_seen="2020-01-01T00:00:00Z")
-        _write_cluster("moi", last_seen="2026-10-12T09:00:00Z")
+        _write_cluster("moi", last_seen=_NOW)
         resp = client.get("/clusters")
         body = resp.json()
         assert body["total"] == 1

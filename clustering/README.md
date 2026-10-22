@@ -104,6 +104,78 @@ CLUSTER_STORE_BACKEND=memory LOG_STORE_BACKEND=memory CLUSTERING_INTERVAL_SECOND
 | `CLUSTER_STORE_BACKEND` | `opensearch` | `opensearch` (thật) hoặc `memory` (dev/test nhẹ) |
 | `OPENSEARCH_CLUSTER_INDEX` | `clusters` | Index lưu `ClusterRecord` (dùng chung `OPENSEARCH_URL` với Ingestion) |
 
+## Lớp ML tùy chọn (mặc định TẮT)
+
+Hai lớp ML được bổ sung **bên cạnh**, không thay thế thuật toán rule-based.
+**Cả hai mặc định tắt** và mọi lỗi (thiếu thư viện, model tải thất bại, dữ liệu
+không đủ) đều tự quay về đúng luồng rule-based — bật lên không thể làm hệ thống
+phát hiện kém hơn khi chưa bật.
+
+```bash
+pip install -r clustering/requirements-ml.txt     # scikit-learn + sentence-transformers
+```
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `CLUSTERING_SCORER` | `zscore` | `iforest` = thêm Isolation Forest vào việc chấm điểm (chỉ cần `scikit-learn`) |
+| `CLUSTERING_IFOREST_MIN_SAMPLES` | `10` | Dưới số mẫu lịch sử này thì không dùng Isolation Forest (quay về z-score) |
+| `CLUSTERING_IFOREST_SEED` | `0` | `random_state` cố định để cùng dữ liệu cho cùng score ở mọi lần chạy |
+| `CLUSTERING_SEMANTIC_MERGE` | `false` | `true` = gộp các cụm có signature tương đồng về nghĩa (cần `sentence-transformers`) |
+| `CLUSTERING_SEMANTIC_MODEL` | `all-MiniLM-L6-v2` | Model sinh embedding cho signature |
+| `CLUSTERING_SEMANTIC_MIN_SIMILARITY` | `0.75` | Cosine similarity tối thiểu để 2 signature được gộp |
+
+### 1. Isolation Forest — `CLUSTERING_SCORER=iforest` ([`src/iforest_score.py`](src/iforest_score.py))
+
+Huấn luyện **một** model dùng chung cho tất cả cụm trong mỗi lần chạy (pooled),
+vì mỗi cụm chỉ có `CLUSTERING_BASELINE_WINDOWS` (mặc định 6) điểm lịch sử — quá
+ít để học riêng từng cụm. Feature mỗi điểm là `[count, count_bucket_trước,
+chênh_lệch]`, nên model nhìn được cả **mức độ** lẫn **tốc độ thay đổi**, khác
+z-score chỉ nhìn một chiều.
+
+Score cuối cùng = **`max(z-score, iforest)`**. Hai lý do đã đo được thật:
+
+- `score_samples()` của Isolation Forest có miền giá trị **bị chặn**: một burst
+  200 lỗi trên lịch sử ~2 lỗi/bucket chỉ cho score `1.833` — **dưới** ngưỡng
+  `2.0`. Dùng iforest một mình sẽ khiến burst lớn **không** alert, kém nhạy hơn
+  cả z-score.
+- Ngược lại, iforest bắt được thứ z-score mù hoàn toàn: lịch sử dao động `0/20`
+  (mean=10, stdev=10) với `count=10` cho z-score `0.00` ("bình thường"), còn
+  iforest cho `1.32` vì 10 là giá trị **chưa từng xuất hiện** trong mẫu 0/20 đó.
+
+Tức là z-score lo bất thường về **độ lớn**, Isolation Forest lo bất thường về
+**hình dạng** — lấy `max` để không mất bên nào.
+
+### 2. Gộp cụm theo ngữ nghĩa — `CLUSTERING_SEMANTIC_MERGE=true` ([`src/semantic.py`](src/semantic.py))
+
+`normalize_message()` chỉ gộp được các lỗi cùng "hình dạng" sau khi thay giá trị
+động. Hai message diễn đạt khác nhau nhưng cùng một vấn đề (vd. *"Connection
+refused by downstream"* vs *"Downstream dependency unreachable"*) vẫn thành 2 cụm
+riêng. Lớp này sinh embedding cho từng signature (`all-MiniLM-L6-v2`) rồi gộp
+các signature có cosine similarity ≥ `CLUSTERING_SEMANTIC_MIN_SIMILARITY`.
+
+**Dùng agglomerative clustering, không dùng HDBSCAN** — đã đo thật trên đúng
+quy mô dữ liệu này (4 signature): HDBSCAN gán *tất cả* là nhiễu (`[-1 -1 -1 -1]`)
+nên không gộp được gì, kể cả khi hạ `min_samples=1`; bật `allow_single_cluster`
+thì gộp sai và bỏ sót. Nguyên nhân: HDBSCAN dựa trên **mật độ**, cần nhiều điểm,
+còn mỗi service trong một khung thời gian chỉ có vài signature. Agglomerative với
+ngưỡng khoảng cách cosine cho kết quả đúng (`[0 0 0 1]`) và diễn đạt trực tiếp ý
+muốn bằng **một** tham số duy nhất.
+
+**Hai điều cần biết trước khi bật**:
+
+- Gộp làm **đổi signature đại diện → đổi `cluster_id`** (xem
+  `anomaly_score._stable_cluster_id`). Các `ClusterRecord` đang có trên bản deploy
+  thật và `expected_cluster_signature` trong
+  [`evaluation/labeled_incidents.json`](evaluation/labeled_incidents.json) sẽ không
+  còn khớp → **phải tạo lại evidence precision/recall** sau khi bật.
+- `sentence-transformers` kéo theo `torch` (~1GB). Cần lưu ý với VM 2 vCPU/4GB
+  của bản deploy hiện tại (đã chạy OpenSearch + 6 container). Riêng
+  `CLUSTERING_SCORER=iforest` thì **chỉ cần `scikit-learn`**, nhẹ hơn nhiều.
+
+Baseline lịch sử được **cộng dồn theo từng signature gốc** đã gộp vào cụm
+(`members` trong `semantic.merge_similar_groups`), nếu không baseline sẽ thấp giả
+tạo và score cao giả tạo.
+
 ## Chạy thử end-to-end (tạo số liệu precision/recall thật)
 
 ```bash
