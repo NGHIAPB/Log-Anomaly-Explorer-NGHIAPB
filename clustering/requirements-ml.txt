@@ -1,0 +1,11 @@
+# Phu thuoc TUY CHON cho 2 lop ML cua clustering (ca hai mac dinh TAT, xem
+# clustering/README.md muc "Lop ML tuy chon"). Khong cai file nay thi
+# clustering van chay binh thuong bang thuat toan rule-based.
+#
+#   CLUSTERING_SCORER=iforest       -> chi can scikit-learn (nhe)
+#   CLUSTERING_SEMANTIC_MERGE=true  -> can them sentence-transformers
+#                                      (keo theo torch, ~1GB - can luu y voi
+#                                      VM 2 vCPU/4GB cua ban deploy hien tai)
+-r requirements.txt
+scikit-learn>=1.3
+sentence-transformers>=2.2

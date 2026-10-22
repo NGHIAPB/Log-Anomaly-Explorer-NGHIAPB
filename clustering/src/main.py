@@ -16,6 +16,11 @@ Bien moi truong (xem clustering/README.md):
     CLUSTERING_BASELINE_WINDOWS (mac dinh 6) - so khung lich su dung tinh baseline.
     CLUSTERING_INTERVAL_SECONDS (mac dinh 60) - khoang nghi giua 2 lan chay; 0 = chay 1 lan.
     CLUSTERING_FETCH_SIZE (mac dinh 5000) - so log toi da doc mot lan tu LogStore.
+
+Hai lop ML TUY CHON, mac dinh TAT (xem clustering/README.md muc "Lop ML tuy chon"):
+    CLUSTERING_SEMANTIC_MERGE=true  - gop cum theo ngu nghia (semantic.py).
+    CLUSTERING_SCORER=iforest       - cham score bang Isolation Forest (iforest_score.py).
+Ca hai deu tu quay ve luong rule-based khi thieu thu vien hoac gap loi.
 """
 
 from __future__ import annotations
@@ -30,6 +35,8 @@ from .alert import check_and_alert
 from .anomaly_score import compute_anomaly_score
 from .baseline import bucket_key, compute_baseline, historical_bucket_counts
 from .clustering import group_similar_errors
+from .iforest_score import combine, maybe_fit_scorer
+from .semantic import maybe_merge_semantic
 from .storage import get_cluster_store
 
 WINDOW_MINUTES = float(os.environ.get("CLUSTERING_WINDOW_MINUTES", "10"))
@@ -65,15 +72,36 @@ def run_once(now: datetime | None = None) -> list[dict]:
     history_logs = [l for l in error_logs if l.get("timestamp", "") < window_start_iso]
 
     groups = group_similar_errors(current_logs)
+    # Lop ML tuy chon, mac dinh TAT -> tra lai dung groups rule-based
+    # (xem semantic.py, iforest_score.py).
+    groups, members = maybe_merge_semantic(groups)
     current_bucket = bucket_key(now.isoformat(), WINDOW_MINUTES)
+
+    # Cong don lich su theo TUNG signature goc da gop vao cum: neu chi dem
+    # theo signature dai dien thi lich su cua cac signature con lai bi bo
+    # qua, baseline thap gia tao -> score cao gia tao. Khi khong gop (mac
+    # dinh), members[key] chi co dung 1 signature nen ket qua khong doi.
+    counts_by_key: dict[tuple[str, str], list[int]] = {}
+    for key, signatures in members.items():
+        per_signature = [
+            historical_bucket_counts(
+                history_logs, key[0], signature, WINDOW_MINUTES, BASELINE_WINDOWS, current_bucket
+            )
+            for signature in signatures
+        ]
+        counts_by_key[key] = [sum(values) for values in zip(*per_signature)]
+
+    scorer = maybe_fit_scorer(counts_by_key)
 
     results: list[dict] = []
     for (service, signature), logs in groups.items():
-        counts = historical_bucket_counts(
-            history_logs, service, signature, WINDOW_MINUTES, BASELINE_WINDOWS, current_bucket
-        )
+        counts = counts_by_key[(service, signature)]
         baseline = compute_baseline(counts)
         record = compute_anomaly_score(signature, logs, baseline["mean"], baseline["stdev"])
+        if scorer is not None:
+            # max(z-score, iforest): lop ML chi lam TANG do nhay, khong bao
+            # gio lam giam (xem docstring iforest_score.py).
+            record["score"] = round(combine(record["score"], scorer.score(counts, len(logs))), 3)
         check_and_alert(record)
         cluster_store.write_cluster(record)
         results.append(record)
